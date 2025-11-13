@@ -9,6 +9,8 @@
 
 //#include <pigpio.h>
 #include "dma.h"
+#include "dma_helpers.h"
+#include "smi.h"
 
 #define UDMABUF_SYS "/sys/class/u-dma-buf/udmabuf0/"
 #define SIZE_FILE "size"
@@ -83,7 +85,7 @@ void* map_dma_buffer(size_t buf_size)
 {
     int fd = 0;
 
-    if((fd = open("/dev/udmabuf0", O_RDWR)) < 0)
+    if((fd = open("/dev/udmabuf0", O_RDWR | O_SYNC)) < 0)
     {
         perror("ERROR: failed opening /dev/udmabuf0\n");
         return NULL;    
@@ -101,92 +103,34 @@ void* map_dma_buffer(size_t buf_size)
     return buf;
 }
 
-void dma_sync_for_device()
-{
-    int fd = open(UDMABUF_SYS SYNC_DEVICE, O_WRONLY);
-    write(fd, "1", 1);
-    close(fd);
-}
 
-void dma_sync_for_cpu() 
+int start_dma(MEM_MAP* dma_buffer, void* dma_regs, uint8_t channel, DMA_CB* cb)
 {
-    int fd = open(UDMABUF_SYS SYNC_CPU, O_WRONLY);
-    write(fd, "1", 1);
-    close(fd);
-}
-
-int check_buf(unsigned char* buf, unsigned int size)
-{
-    int m = 256;
-    int n = 10;
-    int i, k;
-    int error_count = 0;
-    while(--n > 0) 
+    if(cb == NULL || dma_regs == NULL)
     {
-        for(i = 0; i < size; i = i + m) 
-        {
-            m = (i+256 < size) ? 256 : (size-i);
-            for(k = 0; k < m; k++) 
-            {
-                buf[i+k] = (k & 0xFF);
-            }
-            for(k = 0; k < m; k++) 
-            {
-                if (buf[i+k] != (k & 0xFF)) 
-                {
-                    error_count++;
-                }
-            }
-        }
+        perror("ERROR: Null pointer passed to dma\n");
+        return -1;
     }
-    return error_count;
-}
 
-int clear_buf(unsigned char* buf, unsigned int size)
-{
-    int n = 100;
-    int error_count = 0;
-    while(--n > 0) {
-        memset((void*)buf, 0, size);
+    if (channel > 14)
+    {
+        perror("ERROR: Channel out of range\n"); 
+        return - 1;
     }
-    return error_count;
-}
 
-void enable_dma(MEM_MAP dma_regs, int channel)
-{
-    //*REG32(dma_regs, DMA_ENABLE) |= (1 << channel);
-    //*REG32(dma_regs, DMA_REG(channel, DMA_REG_CS)) = CS_CR; /* Reset the channel */
-}
+    volatile uint32_t* dma_cs = DMA_N_REG(dma_regs, channel);
+    volatile uint32_t* dma_conblk_ad = (volatile uint32_t*)((char*)dma_cs + 0x04);
+    *dma_conblk_ad = (uint32_t)dma_buffer->bus; 
 
-void start_dma()
-{
-    
-}
+    CS_SETBIT(*dma_cs, CS_ACTIVE);
 
-int dma_test_mem_transfer(void* buffer)
-{
-    DMA_CB* cbp = (DMA_CB*) buffer;
-    char* src = (char*)(cbp+1);
-    char* dest = src + 0x100;
-
-    strcpy(src, "Memory transfer OK");
-    memset(cbp, 0, sizeof(DMA_CB));
-
-    cbp->ti = DMA_CB_SRC_INC | DMA_CB_DEST_INC;
-    //cbp->src_addr = BUS_ALIAS_UNCACHED(src);
-    //cbp->dest_addr = BUS_ALIAS_UNCACHED(dest);
-    cbp->tfr_len = strlen(src) + 1;
-    start_dma(cbp);
-    sleep(10);      /* Replace with nanosleep for better sleep functionality */
-    printf("DMA test: %s\n", dest[0] ? dest : "failed");
-    return (dest[0] != 0);
-
+    return 0;
 }
 
 int main()
 {
     MEM_MAP dma_buffer;
-
+    
     /* Map u-dma buffer */
     dma_buffer.virt = map_dma_buffer(DMA_BUFFER_SIZE);
     if(dma_buffer.virt == NULL)
@@ -213,15 +157,15 @@ int main()
     memset(dma_regs, 0, sizeof(14 * PAGE_SIZE));
 
     volatile uint32_t* dma_cs = DMA_N_REG(dma_regs, 0);
-    
+
     CS_SETBIT(*dma_cs, CS_CR);
     DMA_CB* cb    = (DMA_CB*) dma_buffer.virt;
 
     memset(cb, 0, sizeof(DMA_CB));
     char* msg  = (char*) (cb + 1);
     char* dest = msg + 0x100;
-    strcpy(msg, "Hello World!");
-    
+    strcpy(msg, "This is a DMA transfer message");
+
 
     cb->ti = DMA_CB_SRC_INC | DMA_CB_DEST_INC;
     uintptr_t src_offset  = (uintptr_t)msg  - (uintptr_t)dma_buffer.virt;
@@ -230,21 +174,44 @@ int main()
     cb->dest_addr = (uint32_t)((uintptr_t)dma_buffer.bus + dest_offset);
     cb->tfr_len   = strlen(msg) + 1;
 
-    volatile uint32_t* dma_conblk_ad = (volatile uint32_t*)((char*)dma_cs + 0x04);
-    *dma_conblk_ad = (uint32_t)dma_buffer.bus; 
+    start_dma(&dma_buffer, dma_regs, 0, cb);
 
-    uint32_t read_conblk = *dma_conblk_ad;
-    printf("DMA CONBLK_AD readback: 0x%08x\n", read_conblk);
-
-    CS_SETBIT(*dma_cs, CS_ACTIVE);
-    sleep(1);
+    sleep(0);
     uint32_t cs = *dma_cs;
-    if (cs & CS_END)  printf("DMA: END bit set\n");
-    if (cs & CS_INT)  printf("DMA: INT bit set\n");
-    if (cs & CS_DREQ) printf("DMA: DREQ bit set\n");
-    if (!(cs & CS_END)) printf("DMA did not indicate completion (may have aborted). Check CB addresses and TI flags.\n");
-    printf("dest virt: %p\n", (void*)dest);
-    printf("dest content: '%s'\n", dest);
+    uint32_t debug = *dma_cs + 0x20;
+    printf("Version: %i", (debug & DB_VERSION));
+    if(cs & CS_END) 
+    {
+        printf("dest virt: %p\n", (void*)dest);
+        printf("dest content: '%s'\n", dest);
+    } else
+    {
+        perror("DMA transfer incomplete\n");
+    }
+    
+    void* smi_regs = map_segment(SMI_BASE, PAGE_SIZE);
+    volatile SMI_CS* smi_cs;
+    volatile SMI_DSR* smi_dsr;
+    volatile SMI_DSW* smi_dsw;
+    volatile SMI_DCS* smi_dcs;
+    volatile SMI_DCD*  smi_dd;
+
+
+    smi_cs = smi_regs + SMIO_CS;
+    smi_dsr = smi_regs + SMIO_DSR0;
+    smi_dsw = smi_regs + SMIO_DSW0;
+    smi_dcs = smi_regs + SMIO_DCS;
+    smi_dd = smi_regs + SMIO_DCD;
+    smi_cs_init(smi_cs);
+    init_smi(smi_cs, smi_dsr, smi_dsw, 100, 1, 25, 50, 25);
+
+    smi_dcs->fields.done = 1;
+    smi_dcs->fields.write = 1;
+    smi_dd->value = 0xFF;
+    smi_dcs->fields.start = 1;
+
+
+
     unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
     unmap_segment(dma_regs, PAGE_SIZE);
 
