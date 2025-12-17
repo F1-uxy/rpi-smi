@@ -37,7 +37,6 @@ typedef struct {
 #define DMA_CTRL_BLK(c)		((c * 0x100) + 0x04 ) /* Get offset of DMA channel register CTRL_BLK */
 
 /* DMA Control and Status register */
-#define CS_SETBIT(cs, n)        (cs |= n)
 #define CS_CR                   (1 << 31)   /* DMA Channel Reset */
 #define CS_ABORT                (1 << 30)
 #define CS_DISDEBUG             (1 << 29)

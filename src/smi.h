@@ -3,7 +3,7 @@
 
 #include "gpio.h"
 
-#define SMI_BASE    (PHYS_REG_BASE + 0x6000000) /* Base address             */
+#define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
 #define SMIO_CS      0x00                        /* Control & status         */
 #define SMIO_L       0x04                        /* Transfer length          */
 #define SMIO_A       0x08                        /* Address                  */
@@ -22,6 +22,13 @@
 #define SMIO_DCD     0x3c                        /* Direct data              */
 #define SMIO_FD      0x40                        /* FIFO debug               */
 #define SMIO_REGLEN  (SMI_FD * 4)
+
+/* SMI Width Values */
+#define SMI_8_BITS  0
+#define SMI_16_BITS 1
+#define SMI_18_BITS 2
+#define SMI_9_BITS  3
+
 
 /* SMI Control and Status Register */
 typedef struct {
@@ -56,19 +63,59 @@ typedef union {
     volatile uint32_t value; 
 } SMI_CS __attribute__ ((aligned(32)));
 
-/* SMI Direct Control and Status Register */
+/* SMI Length Register */
 typedef struct {
-    volatile uint32_t   enable : 1,
-                        start  : 1,
-                        done   : 1,
-                        write  : 1,
-                        _res   : 28;
-} SMI_DCS_BITFIELD;
+    volatile uint32_t   length : 32;
+} SMI_L_BITFIELD;
 
 typedef union {
-    SMI_DCS_BITFIELD fields;
+    SMI_L_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DCS __attribute__((aligned(32)));
+} SMI_L __attribute__((aligned(32)));
+
+
+/* SMI Address Register */
+typedef struct {
+    volatile uint32_t   _u1     : 22,
+                        device  : 2,
+                        _u2     : 2,
+                        addr    : 6;
+} SMI_A_BITFIELD;
+
+typedef union {
+    SMI_A_BITFIELD fields;
+    volatile uint32_t value;
+} SMI_A __attribute__((aligned(32)));
+
+
+/* SMI Data Register */
+typedef struct {
+    volatile uint32_t   data : 32;
+} SMI_D_BITFIELD;
+
+typedef union {
+    SMI_D_BITFIELD fields;
+    volatile uint32_t value;
+} SMI_D __attribute__((aligned(32)));
+
+
+/* SMI DMA Control Register */
+typedef struct {
+    volatile uint32_t   _x1     : 3,
+                        dmaen   : 1,
+                        _x2     : 3,
+                        dmap    : 1,
+                        panicr  : 6,
+                        panicw  : 6,
+                        reqr    : 6,
+                        reqw    : 6;
+} SMI_DC_BITFIELD;
+
+typedef union {
+    SMI_DC_BITFIELD fields;
+    volatile uint32_t value;
+} SMI_DC __attribute__((aligned(32)));
+
 
 /* SMI Device Read Setting Register */
 typedef struct {
@@ -88,6 +135,7 @@ typedef union {
     volatile uint32_t value;
 } SMI_DSR __attribute__ ((aligned(32)));
 
+
 /* SMI Device Write Setting Register */
 typedef struct {
     volatile uint32_t   wstrobe  : 7,
@@ -106,6 +154,36 @@ typedef union {
     volatile uint32_t value;
 } SMI_DSW __attribute__ ((aligned(32)));
 
+
+/* SMI Direct Control and Status Register */
+typedef struct {
+    volatile uint32_t   enable : 1,
+                        start  : 1,
+                        done   : 1,
+                        write  : 1,
+                        _res   : 28;
+} SMI_DCS_BITFIELD;
+
+typedef union {
+    SMI_DCS_BITFIELD fields;
+    volatile uint32_t value;
+} SMI_DCS __attribute__((aligned(32)));
+
+
+/* SMI Direct Mode Address Register */
+typedef struct {
+    volatile uint32_t   _x1     : 22,
+                        device  : 2,
+                        _x2     : 2,
+                        addr    : 6;
+} SMI_DA_BITFIELD;
+
+typedef union {
+    SMI_DA_BITFIELD fields;
+    volatile uint32_t value;
+} SMI_DA __attribute__((aligned(32)));
+
+
 /* SMI Direct Mode Data Register */
 typedef struct {
     volatile uint32_t   data : 18,
@@ -115,26 +193,28 @@ typedef struct {
 typedef union {
     SMI_DD_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DCD;
+} SMI_DCD __attribute__((aligned(32)));
 
-void init_smi(SMI_CS* cs, SMI_DSR* dsr, SMI_DSW* dsw, int width, int ns, int setup, int strobe, int hold)
-{
-    //int divi = ns/2;
 
-    cs->value = 0;
-    dsr->value = 0;
+/* SMI FIFO Debug Register */
+typedef struct {
+    volatile uint32_t   _x1     : 18,
+                        flvl    : 6,
+                        _x2     : 2,
+                        fcnt    : 6;
+}SMI_FD_BITFIELD;
 
-    dsr->fields.rsetup = dsw->fields.wsetup = setup;
-    dsr->fields.rstrobe = dsw->fields.wstrobe =strobe;
-    dsr->fields.rhold = dsw->fields.whold = hold;
-    dsr->fields.rwidth = dsw->fields.wwidth = width;
-}
+typedef union {
+    SMI_FD_BITFIELD fields;
+    volatile uint32_t value;
+}SMI_FD __attribute__((aligned(32)));
 
-void smi_cs_init(volatile SMI_CS* cs)
-{
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-    cs->fields.enable = 1;
-}
+void init_smi(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int width, int ns, int setup, int strobe, int hold);
+void smi_gpio_init(MEM_MAP gpio_map);
+
+void smi_cs_init(volatile SMI_CS* cs);
+
+void smi_8b_init(MEM_MAP gpio_map);
+void smi_8b_write(MEM_MAP gpio_map, MEM_MAP smi_regs);
 
 #endif
