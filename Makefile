@@ -6,7 +6,7 @@ SRC_DIR = src
 DEP_DIR = deps
 BUILD_DIR = build
 
-HELPERS = $(SRC_DIR)/gpio.c $(SRC_DIR)/smi.c
+HELPERS = $(SRC_DIR)/gpio.c $(SRC_DIR)/smi.c $(SRC_DIR)/dma.c
 SOURCES = $(SRC_DIR)/main.c $(HELPERS) 
 OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 TARGET = $(BUILD_DIR)/smi

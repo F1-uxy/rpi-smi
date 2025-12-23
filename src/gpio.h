@@ -21,6 +21,8 @@ typedef struct {
 } MEM_MAP;
 
 #define REG32(m, x) ((volatile uintptr_t*) ((uintptr_t)(m.virt)+(uint32_t)(x)))
+#define REG32_BUS(m, x) ((volatile uintptr_t*) ((uintptr_t)(m.bus)+(uint32_t)(x)))
+
 
 /* Get bus address of register */
 #define REG_BUS_ADDR(m, x)  ((uint32_t)(m.bus) + (uint32_t)(x))

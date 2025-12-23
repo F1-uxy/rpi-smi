@@ -2,6 +2,7 @@
 #define SMI_H
 
 #include "gpio.h"
+#include "dma.h"
 
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
 #define SMIO_CS      0x00                        /* Control & status         */
@@ -76,10 +77,10 @@ typedef union {
 
 /* SMI Address Register */
 typedef struct {
-    volatile uint32_t   _u1     : 22,
-                        device  : 2,
-                        _u2     : 2,
-                        addr    : 6;
+    volatile uint32_t   _x1     : 22,                        
+                        addr    : 6,
+                        _x2     : 2,
+                        device  : 2;
 } SMI_A_BITFIELD;
 
 typedef union {
@@ -101,14 +102,14 @@ typedef union {
 
 /* SMI DMA Control Register */
 typedef struct {
-    volatile uint32_t   _x1     : 3,
-                        dmaen   : 1,
-                        _x2     : 3,
-                        dmap    : 1,
-                        panicr  : 6,
-                        panicw  : 6,
+    volatile uint32_t   reqw    : 6,
                         reqr    : 6,
-                        reqw    : 6;
+                        panicw  : 6,
+                        panicr  : 6,
+                        dmap    : 1,
+                        _x2     : 3,
+                        dmaen   : 1,
+                        _x1     : 3;
 } SMI_DC_BITFIELD;
 
 typedef union {
@@ -172,10 +173,10 @@ typedef union {
 
 /* SMI Direct Mode Address Register */
 typedef struct {
-    volatile uint32_t   _x1     : 22,
-                        device  : 2,
+    volatile uint32_t   addr    : 6,
                         _x2     : 2,
-                        addr    : 6;
+                        device  : 2,
+                        _x1     : 22;
 } SMI_DA_BITFIELD;
 
 typedef union {
@@ -198,10 +199,11 @@ typedef union {
 
 /* SMI FIFO Debug Register */
 typedef struct {
-    volatile uint32_t   _x1     : 18,
-                        flvl    : 6,
+    volatile uint32_t   fcnt    : 6,
                         _x2     : 2,
-                        fcnt    : 6;
+                        flvl    : 6,
+                        _x1     : 18;
+                        
 }SMI_FD_BITFIELD;
 
 typedef union {
@@ -209,12 +211,18 @@ typedef union {
     volatile uint32_t value;
 }SMI_FD __attribute__((aligned(32)));
 
-void init_smi(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int width, int ns, int setup, int strobe, int hold);
+void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold);
 void smi_gpio_init(MEM_MAP gpio_map);
 
 void smi_cs_init(volatile SMI_CS* cs);
 
 void smi_8b_init(MEM_MAP gpio_map);
-void smi_8b_write(MEM_MAP gpio_map, MEM_MAP smi_regs);
+void smi_8b_write(MEM_MAP smi_regs);
+void smi_8byte_write(MEM_MAP smi_regs);
+
+void smi_dma_setup(MEM_MAP smi_regs);
+void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel);
+
+
 
 #endif
