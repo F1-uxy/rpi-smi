@@ -30,7 +30,7 @@ typedef struct {
 
 #define DMA_SMI_DREQ 4 
 
-#define DMA_N_REG(base, n) ((uint32_t*)((char*)base + (n * 0x100)))
+#define DMA_N_REG(base, n) ((uintptr_t*)((char*)base + (n * 0x100)))
 
 #define DMA_BASE        0x3F007000
 

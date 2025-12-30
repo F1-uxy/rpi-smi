@@ -21,7 +21,7 @@ void* map_dma_buffer(size_t buf_size)
 {
     int fd = 0;
 
-    if((fd = open("/dev/udmabuf0", O_RDWR | O_SYNC)) < 0)
+    if((fd = open("/dev/udmabuf0", O_RDWR)) < 0)
     {
         perror("ERROR: failed opening /dev/udmabuf0\n");
         return NULL;    
@@ -66,7 +66,7 @@ int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, uint8_t channel, DMA_CB* cb
     offset = DMA_CTRL_BLK(channel);
     volatile DMA_CONBLK_AD* dma_conblk_ad = (volatile DMA_CONBLK_AD*) REG32(dma_regs, offset);
 
-    dma_conblk_ad->value = (uint32_t)dma_buffer->bus; 
+    dma_conblk_ad->value = (uintptr_t)dma_buffer->bus; 
     dma_cs->fields.active = 1;
 
     return 0;
@@ -106,14 +106,13 @@ size_t dma_buffer_init(MEM_MAP* buff, int check, int clear)
         }
     }
     
-    return buff->size;
 
-    /*
-    printf("Buffer size: %zu\n", dma_buffer.size);
-    printf("Virtual Address: %p\n", dma_buffer.virt);
-    printf("Physical Address: %p\n", dma_buffer.phys);
-    printf("Bus Address: %p\n", dma_buffer.bus);
-    */
+    printf("Buffer size: %zu\n", buff->size);
+    printf("Virtual Address: %p\n", buff->virt);
+    printf("Physical Address: %p\n", buff->phys);
+    printf("Bus Address: %p\n", buff->bus);
+
+    return buff->size;
 }
 
 int check_buf(unsigned char* buf, unsigned int size)

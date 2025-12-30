@@ -20,8 +20,8 @@ typedef struct {
     void* phys;
 } MEM_MAP;
 
-#define REG32(m, x) ((volatile uintptr_t*) ((uintptr_t)(m.virt)+(uint32_t)(x)))
-#define REG32_BUS(m, x) ((volatile uintptr_t*) ((uintptr_t)(m.bus)+(uint32_t)(x)))
+#define REG32(m, x) ((volatile uint32_t*) ((uintptr_t)(m.virt)+(uintptr_t)(x)))
+#define REG32_BUS(m, x) ((volatile uint32_t*) ((uintptr_t)(m.bus)+(uintptr_t)(x)))
 
 
 /* Get bus address of register */
@@ -70,7 +70,7 @@ typedef struct {
 
 size_t read_sysfile_size(const char* file);
 void* read_sysfile_phys_addr(const char* file);
-void* map_segment(MEM_MAP* map, uint32_t addr, int size);
+void* map_segment(MEM_MAP* map, uintptr_t addr, int size);
 void unmap_segment(void *mem, int size);
 
 void gpio_mode(MEM_MAP gpio_regs, int pin, int mode);

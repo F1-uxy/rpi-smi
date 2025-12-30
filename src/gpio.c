@@ -40,7 +40,7 @@ void* read_sysfile_phys_addr(const char* file)
     return location;
 }
 
-void* map_segment(MEM_MAP* map, uint32_t addr, int size)
+void* map_segment(MEM_MAP* map, uintptr_t addr, int size)
 {
     int fd;
     void* mem;
@@ -52,7 +52,7 @@ void* map_segment(MEM_MAP* map, uint32_t addr, int size)
         exit(1);
     }
 
-    mem = mmap(0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, (uint32_t)addr);
+    mem = mmap(0, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, (uintptr_t)addr);
     close(fd);
 
     if(mem == MAP_FAILED)
