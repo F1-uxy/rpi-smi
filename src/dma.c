@@ -8,20 +8,19 @@
 #include <time.h>
 
 #include "dma.h"
-
-#define UDMABUF_SYS "/sys/class/u-dma-buf/udmabuf0/"
-#define SIZE_FILE "size"
-#define PHYS_ADDR "phys_addr"
-#define SYNC_CPU "sync_for_cpu"
-#define SYNC_DEVICE "sync_for_device"
-
-
+#include "gpio.h"
 
 void* map_dma_buffer(size_t buf_size)
 {
     int fd = 0;
+    int openFlags = O_RDWR;
 
-    if((fd = open("/dev/udmabuf0", O_RDWR)) < 0)
+    #if defined(PI_ARM32)
+        openFlags |= O_SYNC;
+    #endif
+    
+
+    if((fd = open("/dev/udmabuf0", openFlags)) < 0)
     {
         perror("ERROR: failed opening /dev/udmabuf0\n");
         return NULL;    
@@ -40,7 +39,7 @@ void* map_dma_buffer(size_t buf_size)
 }
 
 
-int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, uint8_t channel, DMA_CB* cb)
+int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev , uint8_t channel, DMA_CB* cb)
 {
     if(cb == NULL)
     {
@@ -53,6 +52,11 @@ int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, uint8_t channel, DMA_CB* cb
         perror("ERROR: Channel out of range\n"); 
         return - 1;
     }
+
+    #if defined(PI_ARM64)
+        //write(fd_sync_dev, "1", 1);
+        sync_for_cpu(fd_sync_dev);
+    #endif
 
     uintptr_t offset = DMA_CS_OFFSET(channel);
     volatile DMA_CS* dma_cs = (volatile DMA_CS*) REG32(dma_regs, offset);

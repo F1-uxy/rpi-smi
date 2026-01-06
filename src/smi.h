@@ -19,8 +19,8 @@
 #define SMIO_DSW3    0x2c                        /* Write settings device 3  */
 #define SMIO_DMC     0x30                        /* DMA control              */
 #define SMIO_DCS     0x34                        /* Direct control/status    */
-#define SMIO_DCA     0x38                        /* Direct address           */
-#define SMIO_DCD     0x3c                        /* Direct data              */
+#define SMIO_DA      0x38                        /* Direct address           */
+#define SMIO_DD      0x3c                        /* Direct data              */
 #define SMIO_FD      0x40                        /* FIFO debug               */
 #define SMIO_REGLEN  (SMI_FD * 4)
 
@@ -194,7 +194,7 @@ typedef struct {
 typedef union {
     SMI_DD_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DCD __attribute__((aligned(32)));
+} SMI_DD __attribute__((aligned(32)));
 
 
 /* SMI FIFO Debug Register */
@@ -216,12 +216,16 @@ void smi_gpio_init(MEM_MAP gpio_map);
 
 void smi_cs_init(volatile SMI_CS* cs);
 
+
 void smi_8b_init(MEM_MAP gpio_map);
-void smi_8b_write(MEM_MAP smi_regs);
-void smi_8byte_write(MEM_MAP smi_regs);
+void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
+void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr);
 
 void smi_dma_setup(MEM_MAP smi_regs);
 void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel);
+
+int smi_8b_read(MEM_MAP smi_regs, uint8_t addr);
+
 
 
 

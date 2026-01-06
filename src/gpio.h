@@ -4,8 +4,14 @@
 #define PHYS_REG_BASE   PI_23_REG_BASE
 #define PI_23_REG_BASE  0x3F000000u      /* Pi 3 */
 
+#if defined(__aarch64__)
+    #define PI_ARM64
+#elif defined(__arm__)
+    #define PI_ARM32
+#endif
+
 /* Location of peripheral registers in physical memory*/
-#define CLOCK_HZ        250000000       /* Pi 3 */
+#define CLOCK_HZ 250000000       /* Pi 3 */
 
 /* Location of peripheral registers in bus memory */
 #define BUS_REG_BASE 0x74000000
@@ -70,6 +76,10 @@ typedef struct {
 
 size_t read_sysfile_size(const char* file);
 void* read_sysfile_phys_addr(const char* file);
+int sync_for_device(int fd);
+int sync_for_cpu(int fd);
+
+
 void* map_segment(MEM_MAP* map, uintptr_t addr, int size);
 void unmap_segment(void *mem, int size);
 

@@ -6,7 +6,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+
 #include "gpio.h"
+#include "dma.h"
 
 size_t read_sysfile_size(const char* file)
 {
@@ -14,7 +16,7 @@ size_t read_sysfile_size(const char* file)
     if(!f)
     {
         perror("ERROR: File size couldn't be read\n");
-        exit(1);
+        return -1;
     }
 
     size_t size = 0;
@@ -30,7 +32,7 @@ void* read_sysfile_phys_addr(const char* file)
     if(!f)
     {
         perror("ERROR: File size couldn't be read\n");
-        exit(1);
+        return NULL;
     }
 
     void* location;
@@ -38,6 +40,32 @@ void* read_sysfile_phys_addr(const char* file)
     fclose(f);
     
     return location;
+}
+
+int write_sync(int fd, uint64_t val)
+{
+    unsigned char attr[1024];
+
+    if(fd < 0)
+    {
+        perror("ERROR: File size couldn't be read\n");
+        return -1;
+    }
+
+    sprintf(attr, "%ld", val);
+    write(fd, attr, 1024);
+
+    return 0;
+}
+
+int sync_for_cpu(int fd)
+{
+    return write_sync(fd, 1);
+}
+
+int sync_for_device(int fd)
+{
+    return write_sync(fd, 1);
 }
 
 void* map_segment(MEM_MAP* map, uintptr_t addr, int size)

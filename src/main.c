@@ -20,6 +20,7 @@ int main()
     int fd_sync_cpu = open("/sys/class/u-dma-buf/udmabuf0/sync_for_cpu", O_WRONLY);
     int fd_sync_dev = open("/sys/class/u-dma-buf/udmabuf0/sync_for_device", O_WRONLY);
     
+
     /* Map u-dma buffer */
     dma_buffer_init(&dma_buffer, 1, 1);
     //clear_buf((unsigned char*)dma_buffer.virt, DMA_BUFFER_SIZE);
@@ -39,7 +40,7 @@ int main()
     /* Map CLK regs */
     map_segment(&clk_regs, CLK_BASE, PAGE_SIZE);
 
-    /*
+    
     volatile uintptr_t* dma_cs = DMA_N_REG(dma_regs.virt, 0);
 
     //REG_SETBIT(*dma_cs, CS_CR);
@@ -58,11 +59,10 @@ int main()
     cb->dest_addr = (uint32_t)((uintptr_t)dma_buffer.bus + dest_offset);
     cb->tfr_len   = strlen(msg) + 1;
 
-    write(fd_sync_dev, "1", 1);
-    start_dma(&dma_buffer, dma_regs, 0, cb);
+    start_dma(&dma_buffer, dma_regs, fd_sync_dev, 0, cb);
 
     sleep(0); // Enough delay for DMA transfer to complete
-    write(fd_sync_cpu, "1", 1);
+    //write(fd_sync_cpu, "1", 1);
     uintptr_t cs = *dma_cs;
     uintptr_t debug = *dma_cs + 0x20;
     if(cs & CS_END) 
@@ -77,7 +77,7 @@ int main()
     printf("SMI regs virt: %p\n", smi_regs.virt);
     printf("SMI regs phys: %p\n", smi_regs.phys);
     
-    */
+
     /*
     DMA_CB* cb = (DMA_CB*)dma_buffer.virt;
     memset(cb, 0, sizeof(DMA_CB));
@@ -102,11 +102,23 @@ int main()
     smi_8b_init(gpio_regs);
     //smi_dma_setup(smi_regs);
     //smi_dma_write(smi_regs, dma_regs, &dma_buffer, cb, DMA_CHANNEL_0);
-    //smi_8b_write(gpio_regs, smi_regs);
-    smi_8byte_write(smi_regs);
+    smi_8b_write(smi_regs, 0x0, 0xF);
 
-    //unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
-    //unmap_segment(dma_regs.virt, PAGE_SIZE);
+    sleep(1);
+    smi_8b_write(smi_regs, 0xF, 0x0);
+
+    //smi_8byte_write(smi_regs, 0xF);
+    sleep(1);
+    int val = smi_8b_read(smi_regs, 0xF);
+    printf("Address: %p ; Value: %d\n", 0xF, val);
+
+    sleep(1);
+
+    val = smi_8b_read(smi_regs, 0x0);
+    printf("Address: %p ; Value: %d\n", 0x0, val);
+    
+    unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
+    unmap_segment(dma_regs.virt, PAGE_SIZE);
 
     return 0;
 }
