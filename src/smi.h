@@ -4,6 +4,9 @@
 #include "gpio.h"
 #include "dma.h"
 
+#define WRITE_TIMEOUT 1000000
+
+/* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
 #define SMIO_CS      0x00                        /* Control & status         */
 #define SMIO_L       0x04                        /* Transfer length          */
@@ -219,7 +222,8 @@ void smi_cs_init(volatile SMI_CS* cs);
 
 void smi_8b_init(MEM_MAP gpio_map);
 void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
-void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr);
+void smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
+void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len);
 
 void smi_dma_setup(MEM_MAP smi_regs);
 void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel);

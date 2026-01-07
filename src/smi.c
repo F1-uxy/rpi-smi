@@ -95,16 +95,28 @@ int smi_write_byte(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, vo
 
     l->value = length;
     cs->fields.start = 1;
-
+    int timeout = 0;
+    
     for(int i = 0; i < length; i++)
     {
+        /* Need to implement a better timeout system + TXD not working how I expected */
+        /*
+        while(!cs->fields.txd && (timeout <= WRITE_TIMEOUT)) timeout++;
+
+        if(timeout >= WRITE_TIMEOUT)
+        {
+            perror("Write timeout limit reached. Write failed\n");
+            return -1;
+        }*/
+
+        printf("Writing %c to %d\n", data[i], (addr + i));
         a->value = addr + i;
         d->value = data[i];
-        cs->fields.write = 1;
     }
 
     while(!cs->fields.done);
     cs->fields.done = 1;
+
 
     return 1;
 }
@@ -129,46 +141,18 @@ void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_
     cs->fields.start = 1;
 }
 
-void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr)
+void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
 
-    int8_t data[] = {0x0, 0xF, 0x0, 0xF, 0xF, 0x0, 0xF, 0xF};
-
-    smi_write_byte(cs, l, a, d, data, sizeof(data), addr);
+    smi_write_byte(cs, l, a, d, data, len, addr);
 }
 
-/* 8 bit data bus example */
-void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
+void smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
 {
-    /*
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
-    volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
-    volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
-    
-    cs->value = 0;
-    
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-
-    cs->fields.enable = 1;
-    cs->fields.write = 1;
-    cs->fields.clear = 1;
-
-    l->value = 1;
-    a->value = addr;
-    d->value = data;
-
-    cs->fields.start = 1;
-
-    while(!cs->fields.done);
-    cs->fields.done = 1;
-    */
-    
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32(smi_regs, SMIO_CS);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32(smi_regs, SMIO_DA);
     volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32(smi_regs, SMIO_DCS);
@@ -191,6 +175,36 @@ void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
     while (!dcs->fields.done);
 
     dcs->fields.done = 1;
+}
+
+/* 8 bit data bus example */
+void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
+{
+    
+    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
+    volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
+    volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
+    volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
+    
+    cs->value = 0;
+    
+    cs->fields.clear = 1;
+    cs->fields.aferr = 1;
+
+    cs->fields.enable = 1;
+    cs->fields.write = 1;
+    cs->fields.clear = 1;
+
+    l->value = 1;
+    a->value = addr;
+    d->value = data;
+
+    cs->fields.start = 1;
+
+    while(!cs->fields.done);
+    cs->fields.done = 1;
+    
+    
 }
 
 int smi_programmed_read(MEM_MAP smi_regs, uint8_t addr, uint8_t len)
@@ -227,6 +241,7 @@ int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32(smi_regs, SMIO_DA);
     volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32(smi_regs, SMIO_DCS);
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32(smi_regs, SMIO_DD);
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
 
     cs->value = 0;
     cs->fields.clear = 1;
@@ -235,18 +250,20 @@ int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)
     cs->fields.pxldat = 0;
     cs->fields.pad = 0;
 
+    dsr->fields.rwidth = 0; /* 8bit read width */
+
     dcs->fields.done = 1;
 
     dcs->fields.write = 0;
 
     da->fields.addr = addr;
-    dd->value = 0; // flush stale data
+    dd->value = 0; /* flush stale data */
 
     dcs->fields.start = 1;
 
     while (!dcs->fields.done);
 
-    int val = dd->fields.data;
+    uint8_t val = (dd->fields.data & 0xFF);
 
     dcs->fields.done = 1;
 

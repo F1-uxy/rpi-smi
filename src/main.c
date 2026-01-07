@@ -11,6 +11,7 @@
 #include "dma.h"
 #include "smi.h"
 #include "clk.h"
+#include "sram.h"
 
 
 int main()
@@ -92,7 +93,9 @@ int main()
     volatile SMI_DSR* smi_dsr = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
     volatile SMI_DSW* smi_dsw = (volatile SMI_DSW*) REG32(smi_regs, SMIO_DSW0);
     
-    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 25, 50, 25);
+    smi_cs->value = 0;
+
+    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 25, 50, 60);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
 
@@ -102,20 +105,12 @@ int main()
     smi_8b_init(gpio_regs);
     //smi_dma_setup(smi_regs);
     //smi_dma_write(smi_regs, dma_regs, &dma_buffer, cb, DMA_CHANNEL_0);
-    smi_8b_write(smi_regs, 0x0, 0xF);
+    //smi_8b_write(smi_regs, 0x0, 1);
 
-    sleep(1);
-    smi_8b_write(smi_regs, 0xF, 0x0);
-
-    //smi_8byte_write(smi_regs, 0xF);
-    sleep(1);
-    int val = smi_8b_read(smi_regs, 0xF);
-    printf("Address: %p ; Value: %d\n", 0xF, val);
-
-    sleep(1);
-
-    val = smi_8b_read(smi_regs, 0x0);
-    printf("Address: %p ; Value: %d\n", 0x0, val);
+    //smi_8byte_write(smi_regs, 8);
+    sram_helloworld(smi_regs);
+    //sram_block_byte_write(smi_regs);
+    
     
     unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
     unmap_segment(dma_regs.virt, PAGE_SIZE);
