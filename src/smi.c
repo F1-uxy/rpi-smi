@@ -207,32 +207,43 @@ void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
     
 }
 
-int smi_programmed_read(MEM_MAP smi_regs, uint8_t addr, uint8_t len)
+int smi_programmed_read(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
-    
-    int8_t* data[] = {0};
+    volatile SMI_FD*  fd = (volatile SMI_FD*) REG32(smi_regs, SMIO_FD);
 
     cs->value = 0;
     
-    cs->fields.clear = 1;
     cs->fields.aferr = 1;
+    cs->fields.pxldat = 1;
 
     cs->fields.enable = 1;
     cs->fields.write = 0;
     cs->fields.clear = 1;
 
     l->value = len;
+    a->value = addr;
 
+    cs->fields.start = 1;
 
-    for(int i = 0; i < len; i++)
-    {
-        
+    int count = 0;
+    
+    while ((!cs->fields.done || cs->fields.rxd > 1)) {
+        if (cs->fields.rxd) {
+            uint32_t word = d->value;
+            ret_data[count++] = (word >>  0) & 0xFF;
+            ret_data[count++] = (word >>  8) & 0xFF;
+            ret_data[count++] = (word >> 16) & 0xFF;
+            ret_data[count++] = (word >> 24) & 0xFF;
+        }
     }
 
+    cs->fields.clear = 1;
+
+    return count;
 }
 
 int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)

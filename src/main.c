@@ -95,7 +95,7 @@ int main()
     
     smi_cs->value = 0;
 
-    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 25, 50, 60);
+    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 25, 50, 64);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
 
@@ -110,8 +110,15 @@ int main()
     //smi_8byte_write(smi_regs, 8);
     sram_helloworld(smi_regs);
     //sram_block_byte_write(smi_regs);
+    int data_len = 12;
+    uint8_t data[data_len];
+    int len_read = smi_programmed_read(smi_regs, 1, data, data_len);
     
-    
+    for(int i = 0; i < len_read; i++)
+    {
+        printf("Data %d = %c\n", i, data[i]);
+    }
+
     unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
     unmap_segment(dma_regs.virt, PAGE_SIZE);
 

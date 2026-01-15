@@ -229,8 +229,7 @@ void smi_dma_setup(MEM_MAP smi_regs);
 void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel);
 
 int smi_8b_read(MEM_MAP smi_regs, uint8_t addr);
-
-
+int smi_programmed_read(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len);
 
 
 #endif
