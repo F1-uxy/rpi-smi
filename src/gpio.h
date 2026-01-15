@@ -4,8 +4,14 @@
 #define PHYS_REG_BASE   PI_23_REG_BASE
 #define PI_23_REG_BASE  0x3F000000u      /* Pi 3 */
 
+#if defined(__aarch64__)
+    #define PI_ARM64
+#elif defined(__arm__)
+    #define PI_ARM32
+#endif
+
 /* Location of peripheral registers in physical memory*/
-#define CLOCK_HZ        250000000       /* Pi 3 */
+#define CLOCK_HZ 250000000       /* Pi 3 */
 
 /* Location of peripheral registers in bus memory */
 #define BUS_REG_BASE 0x74000000
@@ -20,8 +26,8 @@ typedef struct {
     void* phys;
 } MEM_MAP;
 
-#define REG32(m, x) ((volatile uintptr_t*) ((uintptr_t)(m.virt)+(uint32_t)(x)))
-#define REG32_BUS(m, x) ((volatile uintptr_t*) ((uintptr_t)(m.bus)+(uint32_t)(x)))
+#define REG32(m, x) ((volatile uint32_t*) ((uintptr_t)(m.virt)+(uintptr_t)(x)))
+#define REG32_BUS(m, x) ((volatile uint32_t*) ((uintptr_t)(m.bus)+(uintptr_t)(x)))
 
 
 /* Get bus address of register */
@@ -70,7 +76,11 @@ typedef struct {
 
 size_t read_sysfile_size(const char* file);
 void* read_sysfile_phys_addr(const char* file);
-void* map_segment(MEM_MAP* map, uint32_t addr, int size);
+int sync_for_device(int fd);
+int sync_for_cpu(int fd);
+
+
+void* map_segment(MEM_MAP* map, uintptr_t addr, int size);
 void unmap_segment(void *mem, int size);
 
 void gpio_mode(MEM_MAP gpio_regs, int pin, int mode);

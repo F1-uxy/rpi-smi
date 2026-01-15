@@ -13,7 +13,7 @@ When opening the u-dma-buf buffer file do not use the O_SYNC flag
 
 u-dma-buf also provides a quirk-mmap which is an altered version of mmap that lets us manually maintain cache coherancy. This is enabled when you create the buffer, for example:
 ```
-sudo insmod u_dma_buf.ko udmabuf0=1048576 quirk_mmap_mode=2
+sudo insmod u-dma-buf.ko udmabuf0=1048576 quirk_mmap_mode=2
 ```
 
 We must also make use of two files that we write to signal an incoming read or write:
