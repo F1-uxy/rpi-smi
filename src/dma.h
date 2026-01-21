@@ -11,6 +11,19 @@
 #define SYNC_CPU "sync_for_cpu"
 #define SYNC_DEVICE "sync_for_device"
 
+#define DMAO_CS         0x0
+#define DMAO_CONBLK_AD  0x4
+#define DMAO_TI         0x8
+#define DMAO_SOURCE_AD  0xC
+#define DMA0_DEST_AD    0x10
+#define DMAO_TXFR_LEN   0x14
+#define DMAO_STRIDE     0x18
+#define DMAO_NEXTCONBK  0x1C
+#define DMAO_DEBUG      0x20
+
+#define DMAO_CHANNEL_MULTIPLIER 0x100
+
+
 /*
 ** DMA controller
 */
@@ -28,9 +41,10 @@ typedef struct {
              unused;
 } DMA_CB __attribute__ ((aligned(32)));
 
+#define DMA_WAIT_RSP        (1<<3)
 #define DMA_CB_DEST_INC     (1<<4)
-#define DMA_CB_DEST_DREQ    (1<<6)
-#define DMA_CB_SRC_INC      (1<<8)
+#define DMA_DEST_DREQ       (1<<6)
+#define DMA_CB_SRCE_INC     (1<<8)
 #define DMA_SRCE_DREQ       (1<<10)
 
 #define DMA_SMI_DREQ 4 
@@ -121,7 +135,28 @@ typedef union
     volatile uint32_t value;
 } DMA_CONBLK_AD __attribute__((aligned(32)));
 
-/* DMA Debug register */
+/* DMA Debug Register */
+
+typedef struct
+{
+    volatile uint32_t   rlnse           : 1,
+                        fifo_error      : 1,
+                        read_error      : 1,
+                        _x1             : 1,
+                        outstanding_wr  : 4,
+                        dma_id          : 8,
+                        dma_state       : 9,
+                        version         : 3,
+                        lite            : 1,
+                        _x2             : 3;
+} DMA_DEBUG_BITFIELD;
+
+typedef union
+{
+    DMA_DEBUG_BITFIELD fields;
+    volatile uint32_t value;
+} DMA_DEBUG __attribute__((aligned(32)));
+
 #define DMA_DEBUG(cs)		((c * 0x100) + 0x20)
 #define DB_LITE			    (1 << 28)
 #define DB_VERSION		    (7 << 25)
@@ -135,7 +170,7 @@ typedef union
 
 
 void* map_dma_buffer(size_t buf_size);
-int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev , uint8_t channel, DMA_CB* cb);
+int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev, uint8_t channel, DMA_CB* cb);
 size_t dma_buffer_init(MEM_MAP* buff, int check, int clear);
 
 int check_buf(unsigned char* buf, unsigned int size);
