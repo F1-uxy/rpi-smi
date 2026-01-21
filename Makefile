@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS = -g -Wall -O0 -std=c11 
+CFLAGS = -g -Wall -O0 -std=c11 -D_POSIX_C_SOURCE=199309L
 LDFLAGS = -lm
 
 SRC_DIR = src
