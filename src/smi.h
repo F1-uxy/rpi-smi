@@ -1,6 +1,8 @@
 #ifndef SMI_H
 #define SMI_H
 
+#include <stdbool.h>
+
 #include "gpio.h"
 #include "dma.h"
 
@@ -229,7 +231,112 @@ void smi_dma_setup(MEM_MAP smi_regs);
 void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel);
 
 int smi_8b_read(MEM_MAP smi_regs, uint8_t addr);
-int smi_programmed_read(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len);
+int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len);
 
+
+/* SMI Context */
+
+typedef struct {
+    uint8_t interface_width;
+    uint8_t pixel_format;
+    uint8_t pixel_value_mode;
+    uint8_t device_settings_select; 
+    uint8_t interrupts;
+    
+    bool pad;
+    bool tear;
+    bool prdy;
+    bool pxldata;
+
+    MEM_MAP* smi_regs;
+    MEM_MAP* gpio_regs;
+    MEM_MAP* dma_regs;
+    MEM_MAP* dma_buffer;
+} SMI_CXT;
+
+/* SMI Clock Config */
+typedef struct
+{
+    uint8_t device_num;
+
+    uint8_t rsetup;
+    uint8_t rhold;
+    uint8_t rstrobe;
+    uint8_t rpace;
+
+    uint8_t wsetup;
+    uint8_t whold;
+    uint8_t wstrobe;
+    uint8_t wpace;
+} SMI_CLK;
+
+
+/* SMI Read Config */
+typedef struct
+{
+    uint8_t rwidth;
+    uint8_t fsetup;
+    uint8_t rpaceall;
+
+    bool rexreq;
+    bool mode_80;
+} SMI_READ;
+
+
+/* SMI Write Config */
+typedef struct
+{
+    uint8_t wwidth;
+    uint8_t wformat;
+    uint8_t wswap;
+    uint8_t wpaceall;
+    bool wexreg;
+} SMI_WRITE;
+
+/* SMI Read Write & Clock Context */
+typedef struct
+{
+    uint8_t device_num;
+    
+    SMI_CLK* clk;
+    SMI_READ* rconfig;
+    SMI_WRITE* wconfig;
+} SMI_RW;
+
+
+/* --- Interfaces --- */
+
+/* Direct Write*/
+int smi_direct_write(SMI_CXT* cxt);
+int smi_direct_write_arr(SMI_CXT* cxt);
+int smi_direct_write_arr_addr(SMI_CXT* cxt);
+
+/* Programmed Write */
+int smi_programmed_write(SMI_CXT* cxt);
+int smi_programmed_write_arr(SMI_CXT* cxt);
+int smi_programmed_write_dma(SMI_CXT* cxt);
+
+
+/* Direct Read */
+int smi_direct_read(SMI_CXT* cxt);
+int smi_direct_read_arr(SMI_CXT* cxt);
+int smi_direct_read_arr_addr(SMI_CXT* cxt);
+
+/* Programmed Read */
+int smi_programmed_read(SMI_CXT* cxt);
+int smi_programmed_read_arr(SMI_CXT* cxt);
+int smi_programmed_read_dma(SMI_CXT* cxt);
+
+
+/* Setup Interfaces */
+int smi_clk_config(SMI_RW* rwconfig);
+int smi_gpio_config(SMI_CXT* cxt);
+
+
+
+/* --- Workers --- */
+inline int smi_start(SMI_CXT* cxt);
+int smi_timeout_init();
+int smi_await();
 
 #endif

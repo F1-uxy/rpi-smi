@@ -112,7 +112,7 @@ int main()
     //sram_block_byte_write(smi_regs);
     int data_len = 12;
     uint8_t data[data_len];
-    int len_read = smi_programmed_read(smi_regs, 1, data, data_len);
+    int len_read = smi_programmed_read_old(smi_regs, 1, data, data_len);
     
     for(int i = 0; i < len_read; i++)
     {

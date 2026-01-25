@@ -207,7 +207,7 @@ void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
     
 }
 
-int smi_programmed_read(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len)
+int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
@@ -279,4 +279,10 @@ int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)
     dcs->fields.done = 1;
 
     return val;
+}
+
+int smi_start(SMI_CXT* cxt)
+{
+    volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);
+    cs->fields.start = 1;
 }
