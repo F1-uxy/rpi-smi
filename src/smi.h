@@ -6,7 +6,10 @@
 #include "gpio.h"
 #include "dma.h"
 
-#define WRITE_TIMEOUT 1000000
+#define PROG_READ_TIMEOUT_S 10
+
+#define DIRECT_WRITE_TIMEOUT_S 2
+#define PROG_WRITE_TIMEOUT_S 10
 
 /* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
@@ -22,7 +25,7 @@
 #define SMIO_DSW2    0x24                        /* Write settings device 2  */
 #define SMIO_DSR3    0x28                        /* Read settings device 3   */
 #define SMIO_DSW3    0x2c                        /* Write settings device 3  */
-#define SMIO_DMC     0x30                        /* DMA control              */
+#define SMIO_DC      0x30                        /* DMA control              */
 #define SMIO_DCS     0x34                        /* Direct control/status    */
 #define SMIO_DA      0x38                        /* Direct address           */
 #define SMIO_DD      0x3c                        /* Direct data              */
@@ -224,11 +227,12 @@ void smi_cs_init(volatile SMI_CS* cs);
 
 void smi_8b_init(MEM_MAP gpio_map);
 void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
-void smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
+int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
 void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len);
+int smi_programmed_write(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr);
 
 void smi_dma_setup(MEM_MAP smi_regs);
-void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel);
+void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel);
 
 int smi_8b_read(MEM_MAP smi_regs, uint8_t addr);
 int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len);

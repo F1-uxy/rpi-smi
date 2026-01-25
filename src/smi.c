@@ -2,10 +2,14 @@
 #include <stddef.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <errno.h>
+
 
 #include "smi.h"
 #include "clk.h"
 #include "dma.h"
+#include "errors.h"
+#include "timeout.h"
 
 /* ns: Clock period; even number 2 -> 30*/
 void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold)
@@ -77,13 +81,16 @@ void smi_8b_init(MEM_MAP gpio_map)
     }
 }
 
-int smi_write_byte(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr)
+int smi_programmed_write(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr)
 {
     if(cs == NULL || l == NULL || a == NULL || d == NULL || data == NULL) 
     {
         perror("ERROR: SMI write byte NULL reference passed\n");
         return -1;
     }
+
+    struct timespec start;
+    start_timeout(&start);
 
     cs->value = 0; /* Needed to clear any errors from previous transactions */
     cs->fields.clear = 1;
@@ -95,50 +102,72 @@ int smi_write_byte(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, vo
 
     l->value = length;
     cs->fields.start = 1;
-    int timeout = 0;
-    
-    for(int i = 0; i < length; i++)
+
+    int count = 0;
+    while(count < length)
     {
-        /* Need to implement a better timeout system + TXD not working how I expected */
-        /*
-        while(!cs->fields.txd && (timeout <= WRITE_TIMEOUT)) timeout++;
-
-        if(timeout >= WRITE_TIMEOUT)
+        if(!cs->fields.txe)
         {
-            perror("Write timeout limit reached. Write failed\n");
-            return -1;
-        }*/
+            a->value = addr + count;
+            d->value = data[count];
+            count++;
+            sleep(0);
+        }
 
-        printf("Writing %c to %d\n", data[i], (addr + i));
-        a->value = addr + i;
-        d->value = data[i];
+        if(timeout_complete(&start, PROG_WRITE_TIMEOUT_S))
+        {
+            ERROR("Direct write timeout");
+            return -ETIMEDOUT;
+        }
     }
 
-    while(!cs->fields.done);
+    while(!cs->fields.done)
+    {
+        if(timeout_complete(&start, PROG_WRITE_TIMEOUT_S))
+        {
+            ERROR("Direct write timeout");
+            return -ETIMEDOUT;
+        }
+    }
+
     cs->fields.done = 1;
 
-
-    return 1;
+    return count;
 }
 
-void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, DMA_CB* cb, uint8_t channel)
+void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel)
 {
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
-    cb->dest_addr = (uint32_t) REG32_BUS(smi_regs, SMIO_D);
-    printf("Dest address: %p\n", cb->dest_addr);
-    printf("SMI virt address: %p\n", smi_regs.virt);
-    printf("SMI phys address: %p\n", smi_regs.phys);
-    printf("SMI bus address: %p\n", smi_regs.bus);
+    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);
+    volatile SMI_L*  l  = (volatile SMI_L*) REG32(smi_regs, SMIO_L);  
+    volatile SMI_A*  a  = (volatile SMI_A*) REG32(smi_regs, SMIO_A);  
+    volatile SMI_D*  d  = (volatile SMI_D*) REG32(smi_regs, SMIO_D);  
+    volatile SMI_DC* dc = (volatile SMI_DC*) REG32(smi_regs, SMIO_DC);
 
-    cb->ti = DMA_CB_DEST_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_SRC_INC;
-
+    volatile DMA_CS* dma_cs = (volatile DMA_CS*) (REG32(dma_regs, DMAO_CS) + DMA_CHANNEL_0);
+    volatile DMA_DEBUG* dma_debug = (volatile DMA_DEBUG*) (REG32(dma_regs, DMAO_DEBUG) + DMA_CHANNEL_0);
+    volatile uint32_t* dma_dest_addr = (REG32(dma_regs, DMA0_DEST_AD) + DMA_CHANNEL_0);
+    
+    cs->value = 0;
     cs->fields.clear = 1;
+    while (cs->fields.clear);
+    a->value = 0;
+    l->value = cb->tfr_len;
+    
+    dc->fields.dmaen = 1;
+    //dc->fields.dmap = 1; /* Top 2 bits are used for external data requests */
+
+    cs->fields.pxldat = 1;
     cs->fields.enable = 1;
     cs->fields.write = 1;
-    
-    //start_dma(dma_buffer, dma_regs, channel, cb);
 
+
+    cb->dest_addr = REG32_BUS(smi_regs, SMIO_D);
+    cb->ti = DMA_DEST_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_SRCE_INC;
+    
     cs->fields.start = 1;
+    start_dma(dma_buffer, dma_regs, fd_sync_dev, 0, cb);
+
+    while(!cs->fields.done);
 }
 
 void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len)
@@ -148,15 +177,18 @@ void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len)
     volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
 
-    smi_write_byte(cs, l, a, d, data, len, addr);
+    smi_programmed_write(cs, l, a, d, data, len, addr);
 }
 
-void smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
+int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
 {
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32(smi_regs, SMIO_CS);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32(smi_regs, SMIO_DA);
     volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32(smi_regs, SMIO_DCS);
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32(smi_regs, SMIO_DD);
+
+    struct timespec start;
+    start_timeout(&start);
 
     cs->value = 0;
     cs->fields.clear = 1;
@@ -172,7 +204,14 @@ void smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
 
     dcs->fields.start = 1;
 
-    while (!dcs->fields.done);
+    while (!dcs->fields.done)
+    {
+        if(timeout_complete(&start, DIRECT_WRITE_TIMEOUT_S))
+        {
+            ERROR("Direct write timeout");
+            return -ETIMEDOUT;
+        }
+    }
 
     dcs->fields.done = 1;
 }
@@ -185,7 +224,7 @@ void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
     volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
-    
+
     cs->value = 0;
     
     cs->fields.clear = 1;
@@ -215,9 +254,15 @@ int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, u
     volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
     volatile SMI_FD*  fd = (volatile SMI_FD*) REG32(smi_regs, SMIO_FD);
 
+    int count = 0;
+    struct timespec start;
+    start_timeout(&start);
+    
     cs->value = 0;
     
     cs->fields.aferr = 1;
+    cs->fields.seterr = 1;
+
     cs->fields.pxldat = 1;
 
     cs->fields.enable = 1;
@@ -228,16 +273,28 @@ int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, u
     a->value = addr;
 
     cs->fields.start = 1;
-
-    int count = 0;
     
-    while ((!cs->fields.done || cs->fields.rxd > 1)) {
+    while ((!cs->fields.done || cs->fields.rxd > 1) && (count < len)) {
+
+        if(cs->fields.seterr) 
+        {
+            ERROR("A, L or D register written to during programmed read");
+            cs->fields.seterr = 1;
+            return -EIO;
+        }
+
         if (cs->fields.rxd) {
             uint32_t word = d->value;
             ret_data[count++] = (word >>  0) & 0xFF;
             ret_data[count++] = (word >>  8) & 0xFF;
             ret_data[count++] = (word >> 16) & 0xFF;
             ret_data[count++] = (word >> 24) & 0xFF;
+        }
+
+        if(timeout_complete(&start, PROG_READ_TIMEOUT_S))
+        {
+            ERROR("Programmed read timeout");
+            return -ETIMEDOUT;
         }
     }
 
