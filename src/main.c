@@ -109,27 +109,36 @@ int main()
     printf("SMI_CLK_DIV = 0x%08x\n", div);
 
     
+    SMI_CXT cxt;
+    cxt.smi_regs = &smi_regs;
+
     smi_8b_init(gpio_regs);
     //smi_dma_setup(smi_regs);
     //smi_8b_write(smi_regs, 0x0, 1);
-    smi_dma_write(smi_regs, dma_regs, &dma_buffer, fd_sync_dev, cb, DMA_CHANNEL_0);
+    //smi_dma_write(smi_regs, dma_regs, &dma_buffer, fd_sync_dev, cb, DMA_CHANNEL_0);
     sleep(1);
     //smi_8byte_write(smi_regs, 8);
-    //sram_helloworld(smi_regs);
+    sram_helloworld(&cxt);
     //sram_block_byte_write(smi_regs);
     int data_len = 12;
+    uint32_t data32[data_len];
     uint8_t data[data_len];
-    int len_read = smi_programmed_read_old(smi_regs, 1, data, data_len);
+    int len_read = 0;
+    //len_read = smi_programmed_read_old(smi_regs, 1, data, data_len);
+    //len_read = smi_programmed_read(&cxt, &data32, 0);
+    uint32_t val;
+    //smi_direct_read_arr(&cxt, data32, 0, 12, SMI_ADDR_INC);
+    //uint8_t val2 = smi_8b_read(smi_regs, 0);
+    //printf("New read: %d \n", len_read);
+    //len_read = smi_programmed_read_old(smi_regs, 1, data, data_len);
+    //len_read = smi_programmed_read_arr(&cxt, data32, 0, data_len);
+    //printf("Old read: %d \n", len_read);
     
-    if(len_read < 0)
-    {
-        return -1;
-    }
-    
-    for(int i = 0; i < len_read; i++)
-    {
-        printf("Data %d = %c ; %d\n", i, data[i], data[i]);
-    }
+    //printf("Data Direct     %d = %c ; %d\n", 0, val, val);
+
+    //printf("Data Direct Old %d = %c ; %d\n", 0, val2, val2);
+    //printf("Data Programmed %d = %c ; %d\n", 0, data32, data32);
+
     unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
     unmap_segment(dma_regs.virt, PAGE_SIZE);
 

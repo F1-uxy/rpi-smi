@@ -7,20 +7,22 @@
     #error "POSIX verison is insufficient for the required clock_gettime()"
 #endif
 
-static inline void start_timeout(struct timespec* start)
+typedef struct timespec smi_timeout;
+
+static inline void start_timeout(smi_timeout* start)
 {
     clock_gettime(CLOCK_MONOTONIC, start);
 }
 
-static inline int timeout_complete(struct timespec* start, double timeout)
+static inline int timeout_complete(smi_timeout* start, double t_length)
 {
-    struct timespec now;
+    smi_timeout now;
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     double elapsed = (now.tv_sec - start->tv_sec) +
                      (now.tv_nsec - start->tv_nsec)/1e9;
 
-    return elapsed >= timeout;
+    return elapsed >= t_length;
 }
 
 

@@ -81,7 +81,7 @@ void smi_8b_init(MEM_MAP gpio_map)
     }
 }
 
-int smi_programmed_write(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr)
+int smi_programmed_write_old(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr)
 {
     if(cs == NULL || l == NULL || a == NULL || d == NULL || data == NULL) 
     {
@@ -89,7 +89,7 @@ int smi_programmed_write(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A*
         return -1;
     }
 
-    struct timespec start;
+    smi_timeout start;
     start_timeout(&start);
 
     cs->value = 0; /* Needed to clear any errors from previous transactions */
@@ -177,7 +177,7 @@ void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len)
     volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
 
-    smi_programmed_write(cs, l, a, d, data, len, addr);
+    smi_programmed_write_old(cs, l, a, d, data, len, addr);
 }
 
 int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
@@ -187,7 +187,7 @@ int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
     volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32(smi_regs, SMIO_DCS);
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32(smi_regs, SMIO_DD);
 
-    struct timespec start;
+    smi_timeout start;
     start_timeout(&start);
 
     cs->value = 0;
@@ -255,7 +255,7 @@ int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, u
     volatile SMI_FD*  fd = (volatile SMI_FD*) REG32(smi_regs, SMIO_FD);
 
     int count = 0;
-    struct timespec start;
+    smi_timeout start;
     start_timeout(&start);
     
     cs->value = 0;
@@ -338,8 +338,277 @@ int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)
     return val;
 }
 
-int smi_start(SMI_CXT* cxt)
+void smi_start(SMI_CXT* cxt)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);
     cs->fields.start = 1;
+}
+
+int smi_await(SMI_CXT* cxt, smi_timeout* start, uint32_t* ret_data, int len)
+{
+    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
+    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+
+    if(ret_data == NULL) return -1;
+
+    int count = 0;
+    while ((!cs->fields.done || cs->fields.rxd > 1) && (count < len)) {
+        if(cs->fields.seterr) 
+        {
+            ERROR("A, L or D register written to during programmed read");
+            cs->fields.seterr = 1;
+            return -EIO;
+        }
+
+        if (cs->fields.rxd) {
+            uint32_t word = d->value;
+            printf("Val: %d\n", ((word >>  0) & 0xFF));
+            printf("Val: %d\n", ((word >>  8) & 0xFF));
+            printf("Val: %d\n", ((word >>  16) & 0xFF));
+            printf("Val: %d\n", ((word >>  24) & 0xFF));
+            if (count < len) ret_data[count++] = (word >>  0) & 0xFF;
+            if (count < len) ret_data[count++] = (word >>  8) & 0xFF;
+            if (count < len) ret_data[count++] = (word >> 16) & 0xFF;
+            if (count < len) ret_data[count++] = (word >> 24) & 0xFF;
+        }
+
+        if(timeout_complete(start, PROG_READ_TIMEOUT_S))
+        {
+            ERROR("Programmed read timeout");
+            cs->fields.clear = 1;
+            return -ETIMEDOUT;
+        }
+    }
+
+    cs->fields.done = 1;
+
+    return count;
+}
+
+int smi_read_await_direct(SMI_CXT* cxt, smi_timeout* start, uint32_t* ret_data, uint8_t addr, int len, int increment)
+{
+    if(ret_data == NULL || start == NULL || cxt == NULL) return -1;
+
+    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
+    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
+
+    int count = 0;
+
+    dcs->fields.write = 0;
+
+    while(count < len)
+    {
+        dcs->fields.start = 1;
+        
+        while (!dcs->fields.done);
+
+        //printf("Value: %d ; Addr: %d\n", (dd->value & 0xFF), da->fields.addr);
+        uint32_t val = dd->value & 0xFF;
+        ret_data[count++] = val;
+        
+        dcs->fields.done = 1;
+
+        if(timeout_complete(start, DIRECT_WRITE_TIMEOUT_S))
+        {
+            ERROR("Direct read array timeout");
+            cs->fields.clear = 1;
+            dcs->fields.done = 1;
+            return -ETIMEDOUT;
+        }
+
+        if(increment > 0) {addr++; da->fields.addr = addr;}
+        else if (increment < 0) {addr--; da->fields.addr = addr;};
+    }
+
+    return count;
+}
+
+int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
+{
+    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
+    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
+
+    smi_timeout start;
+    start_timeout(&start);
+
+    cs->value = 0;
+    cs->fields.clear = 1;
+    cs->fields.aferr = 1;
+    cs->fields.enable = 1;
+    cs->fields.pxldat = 0;
+    cs->fields.pad = 0;
+
+    dsr->fields.rwidth = 0; /* 8bit read width */
+
+    dcs->fields.done = 1;
+
+    dcs->fields.write = 0;
+
+    da->fields.addr = addr;
+    dd->value = 0; /* flush stale data */
+
+    dcs->fields.start = 1;
+    
+    smi_read_await_direct(cxt, &start, ret_data, addr, 1, 0);
+
+    return 1;
+}
+
+int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, uint8_t len, int increment)
+{
+    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
+    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
+
+    smi_timeout start;
+    start_timeout(&start);
+
+    cs->value = 0;
+    cs->fields.clear = 1;
+    cs->fields.aferr = 1;
+    cs->fields.enable = 1;
+    cs->fields.pxldat = 0;
+    cs->fields.pad = 0;
+
+    dsr->fields.rwidth = 0; /* 8bit read width */
+
+    dcs->fields.done = 1;
+
+    dcs->fields.write = 0;
+
+    da->fields.addr = addr;
+    dd->value = 0; /* flush stale data */
+
+    dcs->fields.start = 1;
+    
+    int count = smi_read_await_direct(cxt, &start, ret_data, addr, len, increment);
+    
+    return count;
+}
+
+int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
+{
+    int count = 0;
+    count = smi_programmed_read_arr(cxt, ret_data, addr, 1);
+
+    return count;
+}
+
+int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, uint8_t len)
+{
+    volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
+    volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
+    volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
+    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
+
+    int count = 0;
+    smi_timeout start;
+    start_timeout(&start);
+    
+    cs->value = 0;
+    
+    cs->fields.aferr = 1;
+    cs->fields.seterr = 1;
+
+    cs->fields.pxldat = 1;
+
+    cs->fields.enable = 1;
+    cs->fields.write = 0;
+    cs->fields.clear = 1;
+
+    l->fields.length = len;
+    a->fields.addr = addr;
+
+    smi_start(cxt);
+
+    count = smi_await(cxt, &start, ret_data, len);
+
+    return count;
+
+}
+
+int smi_write_await_direct(SMI_CXT* cxt, smi_timeout* start, uint32_t* data, uint8_t addr, int len, int increment)
+{
+    if(data == NULL || start == NULL || cxt == NULL) return -1;
+
+    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
+    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
+
+    int count = 0;
+
+    dcs->fields.write = 1;
+
+    while(count < len)
+    {
+        dd->value = data[count++];
+        dcs->fields.start = 1;
+        
+        while (!dcs->fields.done);
+
+        dcs->fields.done = 1;
+
+        if(timeout_complete(start, DIRECT_WRITE_TIMEOUT_S))
+        {
+            ERROR("Direct read array timeout");
+            cs->fields.clear = 1;
+            dcs->fields.done = 1;
+            return -ETIMEDOUT;
+        }
+
+        if(increment > 0) {addr++; da->fields.addr = addr;}
+        else if (increment < 0) {addr--; da->fields.addr = addr;};
+    }
+
+    return count;
+}
+
+int smi_direct_write(SMI_CXT* cxt, uint32_t data, uint8_t addr)
+{
+    int count = 0;
+    count = smi_direct_write_arr(cxt, &data, addr, 1, 0);
+    return count;
+}
+
+int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len, int increment)
+{
+    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
+    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
+
+    smi_timeout start;
+    start_timeout(&start);
+
+    cs->value = 0;
+    cs->fields.clear = 1;
+    cs->fields.aferr = 1;
+    cs->fields.enable = 1;
+    cs->fields.pxldat = 0;
+    cs->fields.pad = 0;
+
+    dsr->fields.rwidth = 0; /* 8bit read width */
+
+    dcs->fields.done = 1;
+
+    dcs->fields.write = 1;
+
+    da->fields.addr = addr;
+    dd->value = 0; /* flush stale data */
+
+    dcs->fields.start = 1;
+    
+    smi_write_await_direct(cxt, &start, data, addr, len, increment);
+
+    return 1;
 }

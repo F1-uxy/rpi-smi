@@ -5,11 +5,14 @@
 
 #include "gpio.h"
 #include "dma.h"
+#include "timeout.h"
 
+/* Timeout */
 #define PROG_READ_TIMEOUT_S 10
 
 #define DIRECT_WRITE_TIMEOUT_S 2
 #define PROG_WRITE_TIMEOUT_S 10
+
 
 /* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
@@ -229,7 +232,7 @@ void smi_8b_init(MEM_MAP gpio_map);
 void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
 int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
 void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len);
-int smi_programmed_write(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr);
+int smi_programmed_write_old(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr);
 
 void smi_dma_setup(MEM_MAP smi_regs);
 void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel);
@@ -309,11 +312,12 @@ typedef struct
 
 
 /* --- Interfaces --- */
+#define SMI_ADDR_INC  1
+#define SMI_ADDR_DEC -1
 
 /* Direct Write*/
-int smi_direct_write(SMI_CXT* cxt);
-int smi_direct_write_arr(SMI_CXT* cxt);
-int smi_direct_write_arr_addr(SMI_CXT* cxt);
+int smi_direct_write(SMI_CXT* cxt, uint32_t data, uint8_t addr); // Done
+int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len, int increment); // Done
 
 /* Programmed Write */
 int smi_programmed_write(SMI_CXT* cxt);
@@ -322,13 +326,12 @@ int smi_programmed_write_dma(SMI_CXT* cxt);
 
 
 /* Direct Read */
-int smi_direct_read(SMI_CXT* cxt);
-int smi_direct_read_arr(SMI_CXT* cxt);
-int smi_direct_read_arr_addr(SMI_CXT* cxt);
+int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr); // Done
+int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, uint8_t len, int increment); // Done
 
 /* Programmed Read */
-int smi_programmed_read(SMI_CXT* cxt);
-int smi_programmed_read_arr(SMI_CXT* cxt);
+int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr); // Done
+int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, uint8_t len);
 int smi_programmed_read_dma(SMI_CXT* cxt);
 
 
@@ -337,10 +340,9 @@ int smi_clk_config(SMI_RW* rwconfig);
 int smi_gpio_config(SMI_CXT* cxt);
 
 
-
 /* --- Workers --- */
-inline int smi_start(SMI_CXT* cxt);
-int smi_timeout_init();
-int smi_await();
+void smi_start(SMI_CXT* cxt);
+int smi_await(SMI_CXT* cxt, smi_timeout* start, uint32_t* ret_data, int len);
+int smi_write_await_direct(SMI_CXT* cxt, smi_timeout* start, uint32_t* ret_data, uint8_t addr, int len, int increment);
 
 #endif
