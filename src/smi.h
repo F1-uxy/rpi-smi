@@ -8,10 +8,13 @@
 #include "timeout.h"
 
 /* Timeout */
-#define PROG_READ_TIMEOUT_S 10
+#define DIRECT_READ_TIMEOUT_S 2
+#define PROG_READ_TIMEOUT_S 50
 
-#define DIRECT_WRITE_TIMEOUT_S 2
-#define PROG_WRITE_TIMEOUT_S 10
+#define DIRECT_WRITE_TIMEOUT_S 15
+#define PROG_WRITE_TIMEOUT_S 50
+#define DMA_WRITE_TIMEOUT_S 2
+
 
 
 /* SMI Register Offsets */
@@ -40,6 +43,19 @@
 #define SMI_16_BITS 1
 #define SMI_18_BITS 2
 #define SMI_9_BITS  3
+
+typedef enum {
+    WIDTH_8  = 0,
+    WIDTH_16 = 1,
+    WIDTH_18 = 2,
+    WIDTH_9  = 3 
+} smi_width_t;
+
+typedef struct {
+    uint8_t width;
+    uint32_t data_mask;
+    uint8_t shifts[2];
+} SMI_LAYOUT;
 
 
 /* SMI Control and Status Register */
@@ -241,26 +257,6 @@ int smi_8b_read(MEM_MAP smi_regs, uint8_t addr);
 int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len);
 
 
-/* SMI Context */
-
-typedef struct {
-    uint8_t interface_width;
-    uint8_t pixel_format;
-    uint8_t pixel_value_mode;
-    uint8_t device_settings_select; 
-    uint8_t interrupts;
-    
-    bool pad;
-    bool tear;
-    bool prdy;
-    bool pxldata;
-
-    MEM_MAP* smi_regs;
-    MEM_MAP* gpio_regs;
-    MEM_MAP* dma_regs;
-    MEM_MAP* dma_buffer;
-} SMI_CXT;
-
 /* SMI Clock Config */
 typedef struct
 {
@@ -310,29 +306,71 @@ typedef struct
     SMI_WRITE* wconfig;
 } SMI_RW;
 
+/* SMI DMA Config */
+typedef struct
+{
+    bool dmap;
+    
+    bool panicr; /* RX Panic when RX FIFO exceeds threshold. Increase priority on bus*/
+    bool panicw; /* TX Panic when TX FIFO drops below threshold. Increase priority on bus */
+
+    bool reqr; /* RX DREQ when RX FIFO exceeds threshold. AXI RX DMA to read RX FIFO */
+    bool reqw; /* TX DREQ when TX FIFO drops below threshold. AXI TX DMA to write TX FIFO */
+} SMI_DMA;
+
+
+/* SMI Context */
+
+typedef struct {
+    uint8_t interface_width;
+    uint8_t pixel_format;
+    uint8_t pixel_value_mode;
+    uint8_t device_settings_select; 
+    uint8_t interrupts;
+    
+    bool pad;
+    bool tear;
+    bool prdy;
+    bool pxldata;
+
+    bool dma;
+
+    int fd_sync_dev;
+
+    SMI_DMA dma_config;
+    SMI_LAYOUT layout;
+
+    MEM_MAP* smi_regs;
+    MEM_MAP* gpio_regs;
+    MEM_MAP* dma_regs;
+    MEM_MAP* dma_buffer;
+} SMI_CXT;
+
 
 /* --- Interfaces --- */
-#define SMI_ADDR_INC  1
-#define SMI_ADDR_DEC -1
+
+#define SMI_ADDR_INC     1 /* Increment address */
+#define SMI_ADDR_NO_INC  0
+#define SMI_ADDR_DEC    -1 /* Decrement address */
 
 /* Direct Write*/
 int smi_direct_write(SMI_CXT* cxt, uint32_t data, uint8_t addr); // Done
 int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len, int increment); // Done
 
 /* Programmed Write */
-int smi_programmed_write(SMI_CXT* cxt);
-int smi_programmed_write_arr(SMI_CXT* cxt);
-int smi_programmed_write_dma(SMI_CXT* cxt);
+int smi_programmed_write(SMI_CXT* cxt, uint32_t data, uint8_t addr); // Done
+int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len); // Done
+int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr); // Done
 
 
 /* Direct Read */
 int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr); // Done
-int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, uint8_t len, int increment); // Done
+int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment); // Done
 
 /* Programmed Read */
 int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr); // Done
-int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, uint8_t len);
-int smi_programmed_read_dma(SMI_CXT* cxt);
+int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len); // Done
+// int smi_programmed_read_dma(SMI_CXT* cxt);
 
 
 /* Setup Interfaces */
@@ -342,7 +380,9 @@ int smi_gpio_config(SMI_CXT* cxt);
 
 /* --- Workers --- */
 void smi_start(SMI_CXT* cxt);
-int smi_await(SMI_CXT* cxt, smi_timeout* start, uint32_t* ret_data, int len);
-int smi_write_await_direct(SMI_CXT* cxt, smi_timeout* start, uint32_t* ret_data, uint8_t addr, int len, int increment);
+int smi_await(SMI_CXT* cxt, uint32_t* ret_data, int len);
+int smi_write_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment);
+int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
+int smi_dma_write_await(SMI_CXT* cxt, int channel);
 
 #endif

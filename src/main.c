@@ -79,6 +79,13 @@ int main()
     printf("SMI regs phys: %p\n", smi_regs.phys);
     
     */
+
+    SMI_LAYOUT smi_layout[4] = {
+        [WIDTH_8]  = { 8,  0xFF,      { 0,  8  } },
+        [WIDTH_16] = { 16, 0xFFFF,    { 0, 16 } },
+        [WIDTH_18] = { 18, 0x3FFFF,   { 0, 18 } },
+        [WIDTH_9]  = { 9,  0x1FF,     { 0, 9  } },
+    };
     
     DMA_CB* cb = (DMA_CB*)dma_buffer.virt;
     memset(cb, 0, sizeof(DMA_CB));
@@ -102,6 +109,8 @@ int main()
     smi_cs->value = 0;
 
     init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 4, 3, 6, 3);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 10, 2, 6, 2);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
 
@@ -111,12 +120,15 @@ int main()
     
     SMI_CXT cxt;
     cxt.smi_regs = &smi_regs;
+    cxt.dma_regs = &dma_regs;
+    cxt.dma_buffer = &dma_buffer;
+    cxt.fd_sync_dev = fd_sync_dev;
 
     smi_8b_init(gpio_regs);
     //smi_dma_setup(smi_regs);
     //smi_8b_write(smi_regs, 0x0, 1);
     //smi_dma_write(smi_regs, dma_regs, &dma_buffer, fd_sync_dev, cb, DMA_CHANNEL_0);
-    sleep(1);
+    //sleep(1);
     //smi_8byte_write(smi_regs, 8);
     sram_helloworld(&cxt);
     //sram_block_byte_write(smi_regs);
@@ -124,6 +136,9 @@ int main()
     uint32_t data32[data_len];
     uint8_t data[data_len];
     int len_read = 0;
+
+    //smi_programmed_write_dma(&cxt, cb, 0);
+
     //len_read = smi_programmed_read_old(smi_regs, 1, data, data_len);
     //len_read = smi_programmed_read(&cxt, &data32, 0);
     uint32_t val;
@@ -138,6 +153,10 @@ int main()
 
     //printf("Data Direct Old %d = %c ; %d\n", 0, val2, val2);
     //printf("Data Programmed %d = %c ; %d\n", 0, data32, data32);
+
+    //int read = testbench_write(&cxt, 1000000);
+    //int read = testbench_read(&cxt, 1000000);
+    //printf("Data read: %d\n", read);
 
     unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
     unmap_segment(dma_regs.virt, PAGE_SIZE);

@@ -61,6 +61,8 @@ int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev , uint8_t c
     uintptr_t offset = DMA_CS_OFFSET(channel);
     volatile DMA_CS* dma_cs = (volatile DMA_CS*) REG32(dma_regs, offset);
 
+    dma_cs->fields.reset = 1;
+
     if (dma_cs->fields.active)
     {
         perror("ERROR: DMA already active\n");
