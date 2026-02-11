@@ -79,13 +79,6 @@ int main()
     printf("SMI regs phys: %p\n", smi_regs.phys);
     
     */
-
-    SMI_LAYOUT smi_layout[4] = {
-        [WIDTH_8]  = { 8,  0xFF,      { 0,  8  } },
-        [WIDTH_16] = { 16, 0xFFFF,    { 0, 16 } },
-        [WIDTH_18] = { 18, 0x3FFFF,   { 0, 18 } },
-        [WIDTH_9]  = { 9,  0x1FF,     { 0, 9  } },
-    };
     
     DMA_CB* cb = (DMA_CB*)dma_buffer.virt;
     memset(cb, 0, sizeof(DMA_CB));

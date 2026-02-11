@@ -11,6 +11,13 @@
 #include "errors.h"
 #include "timeout.h"
 
+SMI_LAYOUT smi_layout[4] = {
+    [WIDTH_8]  = { 8,  0xFF,      { 0,  8 } },
+    [WIDTH_16] = { 16, 0xFFFF,    { 0, 16 } },
+    [WIDTH_18] = { 18, 0x3FFFF,   { 0, 18 } },
+    [WIDTH_9]  = { 9,  0x1FF,     { 0, 9  } },7
+};
+
 /* ns: Clock period; even number 2 -> 30*/
 void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold)
 {    
@@ -308,25 +315,6 @@ int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)
     return val;
 }
 
-inline void smi_read(int mode, uint32_t word, uint32_t* ret_data, int count, int len)
-{
-    switch (mode)
-    {
-    case SMI_8_BITS:
-        if (count < len) ret_data[count++] = (word >>  0) & 0xFF;
-        if (count < len) ret_data[count++] = (word >>  8) & 0xFF;
-        if (count < len) ret_data[count++] = (word >> 16) & 0xFF;
-        if (count < len) ret_data[count++] = (word >> 24) & 0xFF;
-        break;
-    case SMI_9_BITS:
-        if (count < len) 
-        break;
-    default:
-        break;
-    }
-    
-}
-
 void smi_start(SMI_CXT* cxt)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);
@@ -339,7 +327,7 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
 
-    if(ret_data == NULL) return -1;
+    if(ret_data == NULL) return -EINVAL;
 
     cs->fields.teen = 0;
 
@@ -775,3 +763,220 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
     start_dma(dma_buffer, dma_regs, cxt->fd_sync_dev, channel, cb);
     return smi_dma_write_await(cxt, 0);
 }
+
+void smi_unpack_rgb585_8(const uint32_t* raw, void* out, size_t count)
+{
+    uint8_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word = raw[i];
+
+        uint8_t b1 = (word >>  0) & 0xFF;
+        uint8_t b0 = (word >>  8) & 0xFF;
+        uint8_t b3 = (word >> 16) & 0xFF;
+        uint8_t b2 = (word >> 24) & 0xFF;
+
+        dst[0] = b0;
+        dst[1] = b1;
+        dst[2] = b2;
+        dst[3] = b3;
+
+        dst += 4;
+    }
+}
+
+void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count)
+{
+    uint8_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word = raw[i];
+
+        uint8_t b2 = (word >>  0) & 0xFF;
+        uint8_t b1 = (word >>  8) & 0xFF;
+        uint8_t b0 = (word >> 16) & 0xFF;
+
+        dst[0] = b0;
+        dst[1] = b1;
+        dst[2] = b2;
+
+        dst += 3;
+    }
+}
+
+/* 
+    Data1 = { FIFO[12:10], FIFO[7:2] } 
+    Data2 = { FIFO[23:18], FIFO[15:13] }
+*/
+void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count)
+{
+    uint16_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word = raw[i];
+
+        uint16_t d0 = ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8);
+        uint16_t d1 = ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0);
+        dst[0] = d0;
+        dst[1] = d1;
+        dst += 2;
+    }
+}
+
+/* 
+    Data1 = { FIFO[23:18], FIFO[15:13] }
+    Data2 = { FIFO[12:10], FIFO[7:2] } 
+*/
+void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count)
+{
+    uint16_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word = raw[i];
+
+        uint16_t d0 = ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0);
+        uint16_t d1 = ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8);
+        dst[0] = d0;
+        dst[1] = d1;
+        dst += 2;
+    }
+}
+
+/* 
+    RGB565 includes repeated bits
+    Data1 = { FIFO[15:11], FIFO[15], FIFO[10:8] }
+    Data2 = { FIFO[7:0], FIFO[4] }
+    Data3 = { FIFO[15:11], FIFO[15], FIFO[10:8] } 
+    Data4 = { FIFO[23:16], FIFO[20] }
+
+*/
+void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count)
+{
+    uint16_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word = raw[i];
+
+        uint16_t d0 = ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0);
+        uint16_t d1 = ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1);
+        uint16_t d2 = ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0);
+        uint16_t d3 = ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1);
+
+        dst[0] = d0;
+        dst[1] = d1;
+        dst[2] = d2;
+        dst[3] = d3;
+
+        dst += 4;
+    }
+}
+
+/* 
+    RGB565 includes repeated bits
+    Data1 = { FIFO[7:0], FIFO[4] }
+    Data2 = { FIFO[15:11], FIFO[15], FIFO[10:8] }
+    Data3 = { FIFO[23:16], FIFO[20] }
+    Data4 = { FIFO[15:11], FIFO[15], FIFO[10:8] } 
+
+*/
+void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count)
+{
+    uint16_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word = raw[i];
+
+        uint16_t d0 = ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0);
+        uint16_t d1 = ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1);
+        uint16_t d2 = ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0);
+        uint16_t d3 = ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1);
+
+        dst[0] = d0;
+        dst[1] = d1;
+        dst[2] = d2;
+        dst[3] = d3;
+
+        dst += 4;
+    }
+}
+
+void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count)
+{
+    uint16_t* dst = out;
+
+    /* Will it have to watch for uneven read counts */
+    for(size_t i = 0; i < count; i+=2)
+    {
+        uint32_t word  = raw[i];
+        uint32_t word2 = raw[i+1];
+
+        uint16_t d0 = ((word >> 8) & 0xFFFF);
+        uint16_t d1 = ((word >> 0) & 0x00FF) | ((word2 >> 8) & 0xFF00);
+        uint16_t d2 = ((word2 >> 0) & 0xFFFF);
+
+        dst[0] = d0;
+        dst[1] = d1;
+        dst[2] = d2;
+
+        dst += 3;
+    }
+}
+
+void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count)
+{
+    uint16_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word  = raw[i];
+
+        uint16_t d0 = ((word >> 0) & 0xFFFF);
+        uint16_t d1 = ((word >> 16));
+
+        dst[0] = d0;
+        dst[1] = d1;
+
+        dst += 2;
+    }
+}
+
+void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count)
+{
+    uint32_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word  = raw[i];
+
+        uint32_t d0 = ((word >> 2) & 0x3F) | ((word >> 4) & 0xFC0) | ((word >> 6) & 0x3F000);
+
+        dst[0] = d0;
+
+        dst += 1;
+    }
+}
+
+void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count)
+{
+    uint32_t* dst = out;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word  = raw[i];
+
+        uint32_t d0 = ((word >> 4) & 0x1) | ((word << 1) & 0xFFE) | ((word >> 3) & 0x1000) | ((word >> 2) & 0x3E000);
+        uint32_t d1 = ((word >> 20) & 0x1) | ((word >> 15) & 0xFFE) | ((word >> 19) & 0x1000) | ((word >> 18) & 0x3E000);
+        dst[0] = d0;
+        dst[1] = d1;
+
+        dst += 2;
+    }
+}
+
+
