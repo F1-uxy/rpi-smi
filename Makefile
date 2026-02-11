@@ -13,6 +13,9 @@ TARGET = $(BUILD_DIR)/smi
 
 all: $(TARGET)
 
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
 $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
