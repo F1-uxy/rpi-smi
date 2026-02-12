@@ -348,11 +348,8 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         }
 
         if (cs->fields.rxd) {
-            uint32_t word = d->value;
-            if (count < len) ret_data[count++] = (word >>  0) & 0xFF;
-            if (count < len) ret_data[count++] = (word >>  8) & 0xFF;
-            if (count < len) ret_data[count++] = (word >> 16) & 0xFF;
-            if (count < len) ret_data[count++] = (word >> 24) & 0xFF;
+            volatile uint32_t word = d->value;
+            ret_data[++count] = word;
         }
 
         if(spin > 1024)
@@ -431,6 +428,8 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
 
+    uint32_t raw_data[1];
+
     cs->value = 0;
     cs->fields.clear = 1;
     cs->fields.aferr = 1;
@@ -449,7 +448,9 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
 
     dcs->fields.start = 1;
     
-    smi_read_await_direct(cxt, ret_data, addr, 1, 0);
+    int count = smi_read_await_direct(cxt, ret_data, addr, 1, 0);
+
+    smi_unpack(cxt, raw_data, ret_data, count);
 
     return 1;
 }
@@ -462,6 +463,8 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
 
+    uint32_t raw_data[len];
+
     cs->value = 0;
     cs->fields.clear = 1;
     cs->fields.aferr = 1;
@@ -479,8 +482,9 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     dd->value = 0; /* flush stale data */
 
     dcs->fields.start = 1;
+    int count = smi_read_await_direct(cxt, raw_data, addr, len, increment);
     
-    int count = smi_read_await_direct(cxt, ret_data, addr, len, increment);
+    smi_unpack(cxt, raw_data, ret_data, count);
     
     return count;
 }
@@ -764,11 +768,13 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
     return smi_dma_write_await(cxt, 0);
 }
 
-void smi_unpack_rgb585_8(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count)
 {
     uint8_t* dst = out;
+    size_t full_words = count / 4;
+    size_t tail_bytes = count % 4;
 
-    for(size_t i = 0; i < count; i++)
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
@@ -784,13 +790,33 @@ void smi_unpack_rgb585_8(const uint32_t* raw, void* out, size_t count)
 
         dst += 4;
     }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint8_t bytes[4] = {
+            (word >>  8) & 0xFF,
+            (word >>  0) & 0xFF,
+            (word >> 24) & 0xFF,
+            (word >> 16) & 0xFF
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
+    }
 }
 
 void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count)
 {
     uint8_t* dst = out;
 
-    for(size_t i = 0; i < count; i++)
+    size_t full_words = count / 4;
+    size_t tail_bytes = count % 4;
+
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
@@ -804,6 +830,22 @@ void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count)
 
         dst += 3;
     }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint8_t bytes[3] = {
+            (word >> 16) & 0xFF,
+            (word >>  8) & 0xFF,
+            (word >>  0) & 0xFF
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
+    }
 }
 
 /* 
@@ -813,8 +855,10 @@ void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count)
 void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count)
 {
     uint16_t* dst = out;
+    size_t full_words = count / 2;
+    size_t tail_bytes = count % 2;
 
-    for(size_t i = 0; i < count; i++)
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
@@ -823,6 +867,21 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count)
         dst[0] = d0;
         dst[1] = d1;
         dst += 2;
+    }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint16_t bytes[2] = {
+            ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8),
+            ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0)
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
     }
 }
 
@@ -833,8 +892,10 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count)
 void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count)
 {
     uint16_t* dst = out;
+    size_t full_words = count / 2;
+    size_t tail_bytes = count % 2;
 
-    for(size_t i = 0; i < count; i++)
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
@@ -843,6 +904,21 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count)
         dst[0] = d0;
         dst[1] = d1;
         dst += 2;
+    }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint16_t bytes[2] = {
+            ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0),
+            ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8)
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
     }
 }
 
@@ -857,8 +933,10 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count)
 void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count)
 {
     uint16_t* dst = out;
+    size_t full_words = count / 4;
+    size_t tail_bytes = count % 4;
 
-    for(size_t i = 0; i < count; i++)
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
@@ -873,6 +951,23 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count)
         dst[3] = d3;
 
         dst += 4;
+    }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint16_t bytes[4] = {
+            ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0),
+            ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1),
+            ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0),
+            ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1)
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
     }
 }
 
@@ -887,15 +982,17 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count)
 void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count)
 {
     uint16_t* dst = out;
+    size_t full_words = count / 4;
+    size_t tail_bytes = count % 4;
 
-    for(size_t i = 0; i < count; i++)
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
-        uint16_t d0 = ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0);
-        uint16_t d1 = ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1);
-        uint16_t d2 = ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0);
-        uint16_t d3 = ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1);
+        uint16_t d0 = ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1);
+        uint16_t d1 = ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0);
+        uint16_t d2 = ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1);
+        uint16_t d3 = ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0);
 
         dst[0] = d0;
         dst[1] = d1;
@@ -904,13 +1001,29 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count)
 
         dst += 4;
     }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint16_t bytes[4] = {
+            ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1),
+            ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0),
+            ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1),
+            ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0)
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
+    }
 }
 
 void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count)
 {
     uint16_t* dst = out;
 
-    /* Will it have to watch for uneven read counts */
     for(size_t i = 0; i < count; i+=2)
     {
         uint32_t word  = raw[i];
@@ -931,8 +1044,10 @@ void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count)
 void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count)
 {
     uint16_t* dst = out;
+    size_t full_words = count / 2;
+    size_t tail_bytes = count % 2;
 
-    for(size_t i = 0; i < count; i++)
+    for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word  = raw[i];
 
@@ -943,6 +1058,21 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count)
         dst[1] = d1;
 
         dst += 2;
+    }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint16_t bytes[4] = {
+            ((word >> 0) & 0xFFFF),
+            ((word >> 16))
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
     }
 }
 
@@ -965,6 +1095,8 @@ void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count)
 void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count)
 {
     uint32_t* dst = out;
+    size_t full_words = count / 2;
+    size_t tail_bytes = count % 2;
 
     for(size_t i = 0; i < count; i++)
     {
@@ -977,6 +1109,103 @@ void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count)
 
         dst += 2;
     }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+
+        uint32_t bytes[4] = {
+            ((word >> 4) & 0x1) | ((word << 1) & 0xFFE) | ((word >> 3) & 0x1000) | ((word >> 2) & 0x3E000),
+            ((word >> 20) & 0x1) | ((word >> 15) & 0xFFE) | ((word >> 19) & 0x1000) | ((word >> 18) & 0x3E000)
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
+    }
 }
 
+void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+{
+    int width = cxt->rw_config->rconfig->rwidth;
+    int format = cxt->rw_config->wconfig->wformat;
+    int swap = cxt->rw_config->wconfig->wswap;
 
+    switch (width)
+        {
+        case SMI_8_BITS:
+            switch (format)
+            {
+            case SMI_RGB565:
+                smi_unpack_rgb565_8(data, ret_data, count);
+                break;
+                
+            case SMI_XRGB:
+                smi_unpack_xrgb_8(data, ret_data, count);
+                break;
+
+            default:
+                ERROR("Unknown pixel mode - returning raw data");
+                break;
+            }
+            break;
+        case SMI_9_BITS:
+            switch (format)
+            {
+            case SMI_RGB565:
+                (swap == 0) ? 
+                smi_unpack_rgb565_9_swap(data, ret_data, count) : 
+                smi_unpack_rgb565_9(data, ret_data, count);
+                break;
+            
+            case SMI_XRGB:
+                (swap == 0) ? 
+                smi_unpack_xrgb_9_swap(data, ret_data, count) : 
+                smi_unpack_xrgb_9(data, ret_data, count);
+                break;
+
+            default:
+                ERROR("Unknown pixel mode - returning raw data");
+                break;
+            }
+            break;
+        case SMI_16_BITS:
+            switch (format)
+            {
+            case SMI_RGB565:
+                smi_unpack_rgb565_16(data, ret_data, count);
+                break;
+            
+            case SMI_XRGB:
+                smi_unpack_xrgb_16(data, ret_data, count);
+                break;
+
+            default:
+                ERROR("Unknown pixel mode - returning raw data");
+                break;
+            }
+            break;
+        case SMI_18_BITS:
+            switch (format)
+            {
+            case SMI_RGB565:
+                smi_unpack_rgb565_18(data, ret_data, count);
+                break;
+
+            case SMI_XRGB:
+                smi_unpack_xrgb_18(data, ret_data, count);
+                break;
+
+            default:
+                ERROR("Unknown pixel mode - returning raw data");
+                break;
+            }
+            break;
+        default:
+            ERROR("Unknown interface width - could not unpack data");
+            break;
+        }
+
+    
+}

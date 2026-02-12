@@ -38,11 +38,14 @@
 #define SMIO_FD      0x40                        /* FIFO debug               */
 #define SMIO_REGLEN  (SMI_FD * 4)
 
-/* SMI Width Values */
+/* SMI Interface Config */
 #define SMI_8_BITS  0
 #define SMI_16_BITS 1
 #define SMI_18_BITS 2
 #define SMI_9_BITS  3
+
+#define SMI_RGB565 0
+#define SMI_XRGB 1
 
 typedef enum {
     WIDTH_8  = 0,
@@ -346,6 +349,9 @@ typedef struct {
     MEM_MAP* gpio_regs;
     MEM_MAP* dma_regs;
     MEM_MAP* dma_buffer;
+
+    SMI_RW* rw_config;
+
 } SMI_CXT;
 
 
@@ -388,7 +394,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
 int smi_dma_write_await(SMI_CXT* cxt, int channel);
 
 /* --- Bit Unpackers --- */
-void smi_unpack_rgb585_8(const uint32_t* raw, void* out, size_t count);
+void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count);
 void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count);
 
 void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count);
@@ -402,6 +408,6 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count);
 void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count);
 void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count);
 
-
+void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count);
 
 #endif
