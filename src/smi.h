@@ -47,6 +47,13 @@
 #define SMI_RGB565 0
 #define SMI_XRGB 1
 
+#define SMI_DIV(count, ratio) ((float)count/(float)ratio + ((int)count % (int)ratio != 0));
+
+typedef struct {
+    uint8_t read;
+    uint8_t out_pixels;
+} smi_pack_ratio_t;
+
 typedef enum {
     WIDTH_8  = 0,
     WIDTH_16 = 1,
@@ -394,20 +401,21 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
 int smi_dma_write_await(SMI_CXT* cxt, int channel);
 
 /* --- Bit Unpackers --- */
-void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count);
-void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count);
+void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
+void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
 
-void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count);
-void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count);
-void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count);
-void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count);
+void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
+void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
+void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
+void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
 
-void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count);
-void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count);
+void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
+void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
 
-void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count);
-void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count);
+void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
+void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
 
-void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count);
+void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_pack_ratio_t ratio);
+smi_pack_ratio_t smi_packed_ratio(SMI_CXT* cxt);
 
 #endif

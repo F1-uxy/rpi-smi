@@ -450,7 +450,7 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     
     int count = smi_read_await_direct(cxt, ret_data, addr, 1, 0);
 
-    smi_unpack(cxt, raw_data, ret_data, count);
+    //smi_unpack(cxt, raw_data, ret_data, count);
 
     return 1;
 }
@@ -484,7 +484,7 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     dcs->fields.start = 1;
     int count = smi_read_await_direct(cxt, raw_data, addr, len, increment);
     
-    smi_unpack(cxt, raw_data, ret_data, count);
+    //smi_unpack(cxt, raw_data, ret_data, count);
     
     return count;
 }
@@ -502,6 +502,9 @@ int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int 
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
 
     int count = 0;
+    smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
+    int word_reads = SMI_DIV(len, ratio.out_pixels);
+    int raw_data[word_reads];
 
     cs->value = 0;
     
@@ -518,7 +521,9 @@ int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int 
     a->fields.addr = addr;
 
     smi_start(cxt);
-    count = smi_read_await(cxt, ret_data, len);
+    count = smi_read_await(cxt, raw_data, word_reads);
+    //smi_unpack(cxt, raw_data, ret_data, count);
+
 
     return count;
 
@@ -768,7 +773,7 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
     return smi_dma_write_await(cxt, 0);
 }
 
-void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint8_t* dst = out;
     size_t full_words = count / 4;
@@ -809,7 +814,7 @@ void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count)
     }
 }
 
-void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint8_t* dst = out;
 
@@ -852,15 +857,18 @@ void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count)
     Data1 = { FIFO[12:10], FIFO[7:2] } 
     Data2 = { FIFO[23:18], FIFO[15:13] }
 */
-void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / 2;
-    size_t tail_bytes = count % 2;
+    size_t full_words = count / ratio.out_pixels;
+    size_t tail_bytes = count % ratio.out_pixels;
+
+    printf("Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
     for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
+        printf("Word: %d\n", raw[0]);
 
         uint16_t d0 = ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8);
         uint16_t d1 = ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0);
@@ -889,11 +897,13 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count)
     Data1 = { FIFO[23:18], FIFO[15:13] }
     Data2 = { FIFO[12:10], FIFO[7:2] } 
 */
-void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
     size_t full_words = count / 2;
     size_t tail_bytes = count % 2;
+
+    printf("Swap Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
     for(size_t i = 0; i < full_words; i++)
     {
@@ -930,7 +940,7 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count)
     Data4 = { FIFO[23:16], FIFO[20] }
 
 */
-void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
     size_t full_words = count / 4;
@@ -979,7 +989,7 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count)
     Data4 = { FIFO[15:11], FIFO[15], FIFO[10:8] } 
 
 */
-void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
     size_t full_words = count / 4;
@@ -1020,7 +1030,7 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count)
     }
 }
 
-void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
 
@@ -1041,7 +1051,7 @@ void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count)
     }
 }
 
-void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
     size_t full_words = count / 2;
@@ -1076,7 +1086,7 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count)
     }
 }
 
-void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint32_t* dst = out;
 
@@ -1092,7 +1102,7 @@ void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count)
     }
 }
 
-void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count)
+void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint32_t* dst = out;
     size_t full_words = count / 2;
@@ -1126,86 +1136,71 @@ void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count)
     }
 }
 
-void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_pack_ratio_t ratio)
 {
     int width = cxt->rw_config->rconfig->rwidth;
     int format = cxt->rw_config->wconfig->wformat;
     int swap = cxt->rw_config->wconfig->wswap;
 
     switch (width)
-        {
-        case SMI_8_BITS:
-            switch (format)
-            {
-            case SMI_RGB565:
-                smi_unpack_rgb565_8(data, ret_data, count);
-                break;
-                
-            case SMI_XRGB:
-                smi_unpack_xrgb_8(data, ret_data, count);
-                break;
+    {
+    case SMI_8_BITS:
+        if (format == SMI_RGB565) smi_unpack_rgb565_8(data, ret_data, count, ratio);
+        if (format == SMI_XRGB)   smi_unpack_xrgb_8(data, ret_data, count, ratio);
+        return;
 
-            default:
-                ERROR("Unknown pixel mode - returning raw data");
-                break;
-            }
-            break;
-        case SMI_9_BITS:
-            switch (format)
-            {
-            case SMI_RGB565:
-                (swap == 0) ? 
-                smi_unpack_rgb565_9_swap(data, ret_data, count) : 
-                smi_unpack_rgb565_9(data, ret_data, count);
-                break;
-            
-            case SMI_XRGB:
-                (swap == 0) ? 
-                smi_unpack_xrgb_9_swap(data, ret_data, count) : 
-                smi_unpack_xrgb_9(data, ret_data, count);
-                break;
+    case SMI_9_BITS:
+        if (format == SMI_RGB565) (swap == 0) ? 
+                smi_unpack_rgb565_9(data, ret_data, count, ratio) :
+                smi_unpack_rgb565_9_swap(data, ret_data, count, ratio);
+        if (format == SMI_XRGB)   (swap == 0) ? 
+                smi_unpack_xrgb_9(data, ret_data, count, ratio) :
+                smi_unpack_xrgb_9_swap(data, ret_data, count, ratio); 
+        return;
 
-            default:
-                ERROR("Unknown pixel mode - returning raw data");
-                break;
-            }
-            break;
-        case SMI_16_BITS:
-            switch (format)
-            {
-            case SMI_RGB565:
-                smi_unpack_rgb565_16(data, ret_data, count);
-                break;
-            
-            case SMI_XRGB:
-                smi_unpack_xrgb_16(data, ret_data, count);
-                break;
+    case SMI_16_BITS:
+        if (format == SMI_RGB565) smi_unpack_rgb565_16(data, ret_data, count, ratio);
+        if (format == SMI_XRGB)   smi_unpack_xrgb_16(data, ret_data, count, ratio);
+        return;
 
-            default:
-                ERROR("Unknown pixel mode - returning raw data");
-                break;
-            }
-            break;
-        case SMI_18_BITS:
-            switch (format)
-            {
-            case SMI_RGB565:
-                smi_unpack_rgb565_18(data, ret_data, count);
-                break;
+    case SMI_18_BITS:
+        if (format == SMI_RGB565) smi_unpack_rgb565_18(data, ret_data, count, ratio);
+        if (format == SMI_XRGB)   smi_unpack_xrgb_18(data, ret_data, count, ratio);
+        return;
+    }
 
-            case SMI_XRGB:
-                smi_unpack_xrgb_18(data, ret_data, count);
-                break;
+    ERROR("Unknown interface configuration - could not unpack data");
+}
 
-            default:
-                ERROR("Unknown pixel mode - returning raw data");
-                break;
-            }
-            break;
-        default:
-            ERROR("Unknown interface width - could not unpack data");
-            break;
-        }
+smi_pack_ratio_t smi_packed_ratio(SMI_CXT* cxt)
+{
+    int width = cxt->rw_config->rconfig->rwidth;
+    int format = cxt->rw_config->wconfig->wformat;
 
-    
+    switch (width)
+    {
+    case SMI_8_BITS:
+        if (format == SMI_RGB565) return (smi_pack_ratio_t){1, 4};
+        if (format == SMI_XRGB)   return (smi_pack_ratio_t){1, 3};
+        break;
+
+    case SMI_9_BITS:
+        if (format == SMI_RGB565) return (smi_pack_ratio_t){1, 4};
+        if (format == SMI_XRGB)   return (smi_pack_ratio_t){1, 2};
+        break;
+
+    case SMI_16_BITS:
+        if (format == SMI_RGB565) return (smi_pack_ratio_t){1, 2};
+        if (format == SMI_XRGB)   return (smi_pack_ratio_t){2, 3};
+        break;
+
+    case SMI_18_BITS:
+        if (format == SMI_RGB565) return (smi_pack_ratio_t){1, 2};
+        if (format == SMI_XRGB)   return (smi_pack_ratio_t){1, 1};
+        break;
+    }
+
+
+    ERROR("Unknown interface configuration - using 1:1 ratio");
+    return (smi_pack_ratio_t){1,1};
 }
