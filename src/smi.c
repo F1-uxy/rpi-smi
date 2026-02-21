@@ -324,12 +324,12 @@ void smi_start(SMI_CXT* cxt)
 int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 {
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
+    volatile SMI_A*  a  = (volatile SMI_A*)  REG32((*cxt->smi_regs), SMIO_A);
+
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
 
     if(ret_data == NULL) return -EINVAL;
-
-    cs->fields.teen = 0;
 
     int count = 0;
     int spin = 0;
@@ -337,26 +337,35 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     smi_timeout_ns deadline;
     deadline = start_timeout(PROG_READ_TIMEOUT_S);
 
-    while ((!cs->fields.done || cs->fields.rxd > 1) && (count < len)) 
+    while ((!cs->fields.done || cs->fields.rxd > 1)) 
     {
-
-        if(cs->fields.seterr) 
+        if(spin > 1024)
         {
-            ERROR("A, L or D register written to during programmed read");
-            cs->fields.seterr = 1;
-            return -EIO;
+            if(timeout_complete(deadline))
+            {
+                ERROR("Programmed read timeout");
+                cs->fields.clear = 1;
+                return -ETIMEDOUT;
+            }
         }
 
+        spin++;
+    }
+
+    deadline = start_timeout(PROG_READ_TIMEOUT_S);
+    while((count < len))
+    {
         if (cs->fields.rxd) {
             volatile uint32_t word = d->value;
-            ret_data[++count] = word;
+            printf("Word: %u\n", word);
+            ret_data[count++] = word;
         }
 
         if(spin > 1024)
         {
             if(timeout_complete(deadline))
             {
-                ERROR("Programmed read timeout");
+                ERROR("Programmed read data fetch timeout");
                 cs->fields.clear = 1;
                 return -ETIMEDOUT;
             }
@@ -463,7 +472,7 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
 
-    uint32_t raw_data[len];
+    //uint32_t raw_data[len];
 
     cs->value = 0;
     cs->fields.clear = 1;
@@ -482,9 +491,10 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     dd->value = 0; /* flush stale data */
 
     dcs->fields.start = 1;
-    int count = smi_read_await_direct(cxt, raw_data, addr, len, increment);
+    int count = smi_read_await_direct(cxt, ret_data, addr, len, increment);
     
-    //smi_unpack(cxt, raw_data, ret_data, count);
+    //smi_pack_ratio_t t = smi_packed_ratio(cxt);
+    //smi_unpack(cxt, raw_data, ret_data, count, t);
     
     return count;
 }
@@ -494,17 +504,26 @@ int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     return smi_programmed_read_arr(cxt, ret_data, addr, 1);
 }
 
-int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len)
+int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
+    volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW0);
+
 
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV(len, ratio.out_pixels);
+    printf("Address: %d\n", addr);
     int raw_data[word_reads];
+
+    dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
+    dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
+    dsw->fields.wswap = cxt->rw_config->wconfig->wswap;
+
 
     cs->value = 0;
     
@@ -522,10 +541,9 @@ int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int 
 
     smi_start(cxt);
     count = smi_read_await(cxt, raw_data, word_reads);
-    //smi_unpack(cxt, raw_data, ret_data, count);
+    smi_unpack(cxt, raw_data, ret_data, len, ratio);
 
-
-    return count;
+    return len;
 
 }
 
@@ -818,8 +836,8 @@ void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count, smi_pack_ra
 {
     uint8_t* dst = out;
 
-    size_t full_words = count / 4;
-    size_t tail_bytes = count % 4;
+    size_t full_words = count / 3;
+    size_t tail_bytes = count % 3;
 
     for(size_t i = 0; i < full_words; i++)
     {
@@ -862,8 +880,6 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ra
     uint16_t* dst = out;
     size_t full_words = count / ratio.out_pixels;
     size_t tail_bytes = count % ratio.out_pixels;
-
-    printf("Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
     for(size_t i = 0; i < full_words; i++)
     {
@@ -934,31 +950,51 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pa
 
 /* 
     RGB565 includes repeated bits
-    Data1 = { FIFO[15:11], FIFO[15], FIFO[10:8] }
-    Data2 = { FIFO[7:0], FIFO[4] }
-    Data3 = { FIFO[15:11], FIFO[15], FIFO[10:8] } 
-    Data4 = { FIFO[23:16], FIFO[20] }
-
+    Data0 = { FIFO[15:11], FIFO[15], FIFO[10:8] }
+    Data1 = { FIFO[7:0], FIFO[4] }
+    Data2 = { FIFO[31:27], FIFO[31], FIFO[26:24] }
+    Data3 = { FIFO[23:16], FIFO[20] }
 */
+
+static inline void smi_unpack_rgb565_9_word(uint32_t word, uint16_t out[4])
+{
+    uint8_t b0 = (word >>  0) & 0xFF; // FIFO[7:0]
+    uint8_t b1 = (word >>  8) & 0xFF; // FIFO[15:8]
+    uint8_t b2 = (word >> 16) & 0xFF; // FIFO[23:16]
+    uint8_t b3 = (word >> 24) & 0xFF; // FIFO[31:24]
+    
+    // Method 1
+    uint16_t d1 = (b0 << 1) | ((b0 >> 7) & 0x1);
+    uint16_t d3 = (b2 << 1) | ((b2 >> 7) & 0x1);
+
+    // Method 2
+    uint16_t d0 = ((b1 << 1) & 0x1F0) | ((b1 >> 2) & 0x8) | ((b1) & 0x7);
+    uint16_t d2 = ((b3 << 1) & 0x1F0) | ((b3 >> 2) & 0x8) | ((b3) & 0x7);
+
+    out[0] = d0;
+    out[1] = d1;
+    out[2] = d2;
+    out[3] = d3;
+}
+
 void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
     size_t full_words = count / 4;
     size_t tail_bytes = count % 4;
+    uint16_t word_buffer[4];
 
     for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
+        smi_unpack_rgb565_9_word(word, word_buffer);
 
-        uint16_t d0 = ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0);
-        uint16_t d1 = ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1);
-        uint16_t d2 = ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0);
-        uint16_t d3 = ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1);
+        printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
 
-        dst[0] = d0;
-        dst[1] = d1;
-        dst[2] = d2;
-        dst[3] = d3;
+        dst[0] = word_buffer[0];
+        dst[1] = word_buffer[1];
+        dst[2] = word_buffer[2];
+        dst[3] = word_buffer[3];
 
         dst += 4;
     }
@@ -966,48 +1002,48 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_
     if(tail_bytes)
     {
         uint32_t word = raw[full_words];
-
-        uint16_t bytes[4] = {
-            ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0),
-            ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1),
-            ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0),
-            ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1)
-        };
+        smi_unpack_rgb565_9_word(word, word_buffer);
 
         for(size_t i = 0; i < tail_bytes; i++)
         {
-            dst[i] = bytes[i];
+            dst[i] = word_buffer[i];
         }
     }
 }
 
 /* 
     RGB565 includes repeated bits
-    Data1 = { FIFO[7:0], FIFO[4] }
-    Data2 = { FIFO[15:11], FIFO[15], FIFO[10:8] }
-    Data3 = { FIFO[23:16], FIFO[20] }
-    Data4 = { FIFO[15:11], FIFO[15], FIFO[10:8] } 
-
+    Data1 = { FIFO[15:11], FIFO[15], FIFO[10:8] }
+    Data2 = { FIFO[7:0], FIFO[4] }
+    Data3 = { FIFO[15:11], FIFO[15], FIFO[10:8] } 
+    Data4 = { FIFO[23:16], FIFO[20] }
 */
+static inline void apply_swap_16(uint16_t w[4])
+{
+    uint16_t t;
+
+    t = w[0]; w[0] = w[1]; w[1] = t;
+    t = w[2]; w[2] = w[3]; w[3] = t;
+}
+
 void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
     size_t full_words = count / 4;
     size_t tail_bytes = count % 4;
+    uint16_t word_buffer[4];
 
     for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
 
-        uint16_t d0 = ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1);
-        uint16_t d1 = ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0);
-        uint16_t d2 = ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1);
-        uint16_t d3 = ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0);
+        smi_unpack_rgb565_9_word(word, word_buffer);
+        printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
 
-        dst[0] = d0;
-        dst[1] = d1;
-        dst[2] = d2;
-        dst[3] = d3;
+        dst[0] = word_buffer[1];
+        dst[1] = word_buffer[0];
+        dst[2] = word_buffer[3];
+        dst[3] = word_buffer[2];
 
         dst += 4;
     }
@@ -1015,17 +1051,12 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_
     if(tail_bytes)
     {
         uint32_t word = raw[full_words];
-
-        uint16_t bytes[4] = {
-            ((word << 1)  & 0x1FE) | ((word >> 4) & 0x1),
-            ((word >> 8)  & 0x7) | ((word >> 12) & 0x8) | ((word >> 7) & 0x1F0),
-            ((word >> 15)  & 0x1FE) | ((word >> 20) & 0x1),
-            ((word >> 24)  & 0x7) | ((word >> 28) & 0x8) | ((word >> 23) & 0x1F0)
-        };
+        smi_unpack_rgb565_9_word(word, word_buffer);
+        apply_swap_16(word_buffer);
 
         for(size_t i = 0; i < tail_bytes; i++)
         {
-            dst[i] = bytes[i];
+            dst[i] = word_buffer[i];
         }
     }
 }

@@ -8,20 +8,29 @@
 
 void sram_helloworld(SMI_CXT* cxt)
 {
+    cxt->rw_config->rconfig->rwidth = SMI_9_BITS;
+    cxt->rw_config->wconfig->wformat = SMI_RGB565;
+    cxt->rw_config->wconfig->wswap = 1;
+
+
     uint32_t clearData[] = {'\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'};
     uint32_t data32[] = {'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '!', '\0'};
     //uint32_t data32[] = {0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, '\0'};
 
-    smi_direct_write_arr(cxt, clearData, 0, 12, SMI_ADDR_INC);
-    sleep(1);
+    //smi_direct_write_arr(cxt, clearData, 0, 12, SMI_ADDR_INC);
+    //sleep(1);
     printf("Writing\n");
     smi_direct_write_arr(cxt, data32, 0, 12, SMI_ADDR_INC);
     sleep(1); /* Need meaningful sleep when switching between reading and writing */
     printf("Reading\n");
 
-    uint32_t ret[12];
-    int len_read = smi_direct_read_arr(cxt, ret, 0, 12, SMI_ADDR_INC);
-    //int len_read = smi_programmed_read_arr(cxt, ret, 0, 12);
+    uint16_t ret[12];
+    for(int i = 0; i < 12; i++)
+    {
+        ret[i] = 0;
+    }
+    //int len_read = smi_direct_read_arr(cxt, ret, 0, 12, SMI_ADDR_INC);
+    int len_read = smi_programmed_read_arr(cxt, ret, 2, 4);
     if(len_read < 0)
     {
         ERROR("Did not read");
@@ -30,7 +39,7 @@ void sram_helloworld(SMI_CXT* cxt)
 
     for(int i = 0; i < len_read; i++)
     {
-        printf("Address: %x ; Value: %d ; ASCII: %c\n", (i % 64), ret[i], ret[i]);
+        printf("i=%d ; Address: %x ; Value: %u ; ASCII: %c\n", i, (i % 64), ret[i], ret[i]);
     }
 }
 

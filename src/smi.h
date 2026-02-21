@@ -116,10 +116,10 @@ typedef union {
 
 /* SMI Address Register */
 typedef struct {
-    volatile uint32_t   _x1     : 22,                        
-                        addr    : 6,
+    volatile uint32_t   _x1     : 21,                        
+                        device  : 2,
                         _x2     : 2,
-                        device  : 2;
+                        addr    : 6;
 } SMI_A_BITFIELD;
 
 typedef union {
@@ -369,22 +369,22 @@ typedef struct {
 #define SMI_ADDR_DEC    -1 /* Decrement address */
 
 /* Direct Write*/
-int smi_direct_write(SMI_CXT* cxt, uint32_t data, uint8_t addr); // Done
-int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len, int increment); // Done
+int smi_direct_write(SMI_CXT* cxt, uint32_t data, uint8_t addr);
+int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len, int increment);
 
 /* Programmed Write */
-int smi_programmed_write(SMI_CXT* cxt, uint32_t data, uint8_t addr); // Done
-int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len); // Done
-int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr); // Done
+int smi_programmed_write(SMI_CXT* cxt, uint32_t data, uint8_t addr);
+int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
+int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr);
 
 
 /* Direct Read */
-int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr); // Done
-int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment); // Done
+int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr);
+int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment);
 
 /* Programmed Read */
-int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr); // Done
-int smi_programmed_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len); // Done
+int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr);
+int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len);
 // int smi_programmed_read_dma(SMI_CXT* cxt);
 
 
