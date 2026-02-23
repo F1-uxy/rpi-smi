@@ -112,7 +112,7 @@ int smi_programmed_write_old(volatile SMI_CS* cs, volatile SMI_L* l, volatile SM
     {
         if(!cs->fields.txe)
         {
-            a->value = addr + count;
+            a->fields.addr = addr + count;
             d->value = data[count];
             count++;
             sleep(0);
@@ -143,7 +143,7 @@ void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int 
     cs->value = 0;
     cs->fields.clear = 1;
     while (cs->fields.clear);
-    a->value = 0;
+    a->fields.addr = 0;
     l->value = cb->tfr_len;
     
     dc->fields.dmaen = 1;
@@ -220,7 +220,7 @@ void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
     cs->fields.clear = 1;
 
     l->value = 1;
-    a->value = addr;
+    a->fields.addr = addr;
     d->value = data;
 
     cs->fields.start = 1;
@@ -253,7 +253,7 @@ int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, u
     cs->fields.clear = 1;
 
     l->value = len;
-    a->value = addr;
+    a->fields.addr = addr;
 
     cs->fields.start = 1;
     
@@ -516,8 +516,8 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
-    int word_reads = SMI_DIV(len, ratio.out_pixels);
-    printf("Address: %d\n", addr);
+    int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
+    printf("Word Reads: %d\n", word_reads);
     int raw_data[word_reads];
 
     dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
@@ -538,6 +538,7 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
     l->fields.length = len;
     a->fields.addr = addr;
+    printf("Address: %d\n", a->fields.addr);
 
     smi_start(cxt);
     count = smi_read_await(cxt, raw_data, word_reads);
@@ -769,7 +770,7 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
     cb->ti = DMA_DEST_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_SRCE_INC;
 
     cs->fields.clear = 1;
-    a->value = addr;
+    a->fields.addr = addr;
     l->value = cb->tfr_len;
 
     dc->fields.dmaen = 1;
@@ -955,19 +956,16 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pa
     Data2 = { FIFO[31:27], FIFO[31], FIFO[26:24] }
     Data3 = { FIFO[23:16], FIFO[20] }
 */
-
 static inline void smi_unpack_rgb565_9_word(uint32_t word, uint16_t out[4])
 {
-    uint8_t b0 = (word >>  0) & 0xFF; // FIFO[7:0]
-    uint8_t b1 = (word >>  8) & 0xFF; // FIFO[15:8]
-    uint8_t b2 = (word >> 16) & 0xFF; // FIFO[23:16]
-    uint8_t b3 = (word >> 24) & 0xFF; // FIFO[31:24]
+    uint8_t b0 = (word >>  0) & 0xFF;
+    uint8_t b1 = (word >>  8) & 0xFF;
+    uint8_t b2 = (word >> 16) & 0xFF;
+    uint8_t b3 = (word >> 24) & 0xFF;
     
-    // Method 1
     uint16_t d1 = (b0 << 1) | ((b0 >> 7) & 0x1);
     uint16_t d3 = (b2 << 1) | ((b2 >> 7) & 0x1);
 
-    // Method 2
     uint16_t d0 = ((b1 << 1) & 0x1F0) | ((b1 >> 2) & 0x8) | ((b1) & 0x7);
     uint16_t d2 = ((b3 << 1) & 0x1F0) | ((b3 >> 2) & 0x8) | ((b3) & 0x7);
 
@@ -1064,21 +1062,32 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_
 void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
+    size_t full_words = count / 2;
+    size_t tail_bytes = count % 2;
 
-    for(size_t i = 0; i < count; i+=2)
+    for (size_t i = 0; i < full_words; i++)
     {
-        uint32_t word  = raw[i];
-        uint32_t word2 = raw[i+1];
+        uint32_t word  = raw[2*i];
+        uint32_t word2 = raw[2*i + 1];
 
-        uint16_t d0 = ((word >> 8) & 0xFFFF);
-        uint16_t d1 = ((word >> 0) & 0x00FF) | ((word2 >> 8) & 0xFF00);
-        uint16_t d2 = ((word2 >> 0) & 0xFFFF);
+        uint16_t d0 = (word >> 8) & 0xFFFF;
+        uint16_t d1 = ((word << 8) & 0xFF00) |
+                      ((word2 >> 16) & 0x00FF);
+        uint16_t d2 = word2 & 0xFFFF;
 
         dst[0] = d0;
         dst[1] = d1;
         dst[2] = d2;
 
         dst += 3;
+    }
+
+    if (tail_bytes)
+    {
+        uint32_t word = raw[2 * full_words];
+
+        uint16_t d0 = (word >> 8) & 0xFFFF;
+        dst[0] = d0;
     }
 }
 
@@ -1142,9 +1151,12 @@ void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack
     for(size_t i = 0; i < count; i++)
     {
         uint32_t word  = raw[i];
+        uint32_t w0 = (word >> 0) & 0xFFFF;
+        uint32_t w1 = (word >> 16) & 0xFFFF;
 
-        uint32_t d0 = ((word >> 4) & 0x1) | ((word << 1) & 0xFFE) | ((word >> 3) & 0x1000) | ((word >> 2) & 0x3E000);
-        uint32_t d1 = ((word >> 20) & 0x1) | ((word >> 15) & 0xFFE) | ((word >> 19) & 0x1000) | ((word >> 18) & 0x3E000);
+        uint32_t d0 = ((w0 << 2)  & 0x3E000) | ((w0 >> 3)  & 0x1000) | ((w0 << 1)  & 0xFFE);
+        uint32_t d1 = ((w1 << 2)  & 0x3E000) | ((w1 >> 3)  & 0x1000) | ((w1 << 1)  & 0xFFE);
+        
         dst[0] = d0;
         dst[1] = d1;
 
@@ -1154,10 +1166,60 @@ void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack
     if(tail_bytes)
     {
         uint32_t word = raw[full_words];
+        uint32_t w0 = (word >> 0) & 0xFFFF;
+        uint32_t w1 = (word >> 16) & 0xFFFF;
+        uint32_t bytes[4] = {
+            ((w0 << 2)  & 0x3E000) | ((w0 >> 3)  & 0x1000) | ((w0 << 1)  & 0xFFE),
+            ((w1 << 2)  & 0x3E000) | ((w1 >> 3)  & 0x1000) | ((w1 << 1)  & 0xFFE)
+        };
+
+        for(size_t i = 0; i < tail_bytes; i++)
+        {
+            dst[i] = bytes[i];
+        }
+    }
+}
+
+/* RGB565 18 bit swap mode is not correctly implemented - Bit order is reversed however unpacking is still a mystery */
+static inline uint32_t reverse18(uint32_t v)
+{
+    v = ((v & 0x15555) << 1) | ((v & 0x2AAAA) >> 1);
+    v = ((v & 0x03333) << 2) | ((v & 0x0CCCC) >> 2);
+    v = ((v & 0x00F0F) << 4) | ((v & 0x0F0F0) >> 4);
+    v = ((v & 0x000FF) << 8) | ((v & 0x3FC00) >> 8);
+    return v;
+}
+
+void smi_unpack_rgb565_18_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
+{
+    uint32_t* dst = out;
+    size_t full_words = count / 2;
+    size_t tail_bytes = count % 2;
+
+    for(size_t i = 0; i < count; i++)
+    {
+        uint32_t word  = raw[i];
+        uint32_t w0 = reverse18((word >> 0) & 0xFFFF);
+        uint32_t w1 = reverse18((word >> 16) & 0xFFFF);
+
+        uint32_t d0 = ((w0 << 2)  & 0x3E000) | ((w0 >> 3)  & 0x1000) | ((w0 << 1)  & 0xFFE);
+        uint32_t d1 = ((w1 << 2)  & 0x3E000) | ((w1 >> 3)  & 0x1000) | ((w1 << 1)  & 0xFFE);
+
+        dst[0] = d0;
+        dst[1] = d1;
+
+        dst += 2;
+    }
+
+    if(tail_bytes)
+    {
+        uint32_t word = raw[full_words];
+        uint32_t w0 = reverse18((word >> 0) & 0xFFFF);
+        uint32_t w1 = reverse18((word >> 16) & 0xFFFF);
 
         uint32_t bytes[4] = {
-            ((word >> 4) & 0x1) | ((word << 1) & 0xFFE) | ((word >> 3) & 0x1000) | ((word >> 2) & 0x3E000),
-            ((word >> 20) & 0x1) | ((word >> 15) & 0xFFE) | ((word >> 19) & 0x1000) | ((word >> 18) & 0x3E000)
+            ((w0 << 2)  & 0x3E000) | ((w0 >> 3)  & 0x1000) | ((w0 << 1)  & 0xFFE),
+            ((w1 << 2)  & 0x3E000) | ((w1 >> 3)  & 0x1000) | ((w1 << 1)  & 0xFFE)
         };
 
         for(size_t i = 0; i < tail_bytes; i++)
@@ -1195,7 +1257,9 @@ void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_
         return;
 
     case SMI_18_BITS:
-        if (format == SMI_RGB565) smi_unpack_rgb565_18(data, ret_data, count, ratio);
+        if (format == SMI_RGB565) (swap == 0) ? 
+                smi_unpack_rgb565_18(data, ret_data, count, ratio) :
+                smi_unpack_rgb565_18_swap(data, ret_data, count, ratio);
         if (format == SMI_XRGB)   smi_unpack_xrgb_18(data, ret_data, count, ratio);
         return;
     }

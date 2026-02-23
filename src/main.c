@@ -112,6 +112,16 @@ int main()
 
     
     SMI_CXT cxt;
+    SMI_RW rw;
+    SMI_READ rconfig;
+    SMI_WRITE wconfig;
+    rw.rconfig = &rconfig;
+    rw.wconfig = &wconfig;
+
+    rconfig.rwidth = SMI_8_BITS;
+    wconfig.wformat = SMI_RGB565;
+
+    cxt.rw_config = &rw;
     cxt.smi_regs = &smi_regs;
     cxt.dma_regs = &dma_regs;
     cxt.dma_buffer = &dma_buffer;

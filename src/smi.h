@@ -115,11 +115,20 @@ typedef union {
 
 
 /* SMI Address Register */
+/*
 typedef struct {
     volatile uint32_t   _x1     : 21,                        
                         device  : 2,
                         _x2     : 2,
                         addr    : 6;
+} SMI_A_BITFIELD;*/
+
+typedef struct {
+    volatile uint32_t   
+                        addr    : 6,
+                        _x2     : 2,
+                        device  : 2,
+                        _x1     : 21;
 } SMI_A_BITFIELD;
 
 typedef union {
