@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <errno.h>
-
+#include <fcntl.h>
 
 #include "smi.h"
 #include "clk.h"
@@ -11,12 +11,72 @@
 #include "errors.h"
 #include "timeout.h"
 
-SMI_LAYOUT smi_layout[4] = {
-    [WIDTH_8]  = { 8,  0xFF,      { 0,  8 } },
-    [WIDTH_16] = { 16, 0xFFFF,    { 0, 16 } },
-    [WIDTH_18] = { 18, 0x3FFFF,   { 0, 18 } },
-    [WIDTH_9]  = { 9,  0x1FF,     { 0, 9  } },7
-};
+
+void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs)
+{
+    /* Map GPIO regs */
+    map_segment(gpio_regs, GPIO_BASE, PAGE_SIZE);
+
+    /* Map DMA regs */
+    map_segment(dma_regs, DMA_BASE, NADJ_CHANNELS * PAGE_SIZE);
+
+    /* Map SMI regs */
+    map_segment(smi_regs, SMI_BASE, PAGE_SIZE);
+    smi_regs->bus = smi_regs->phys - 0x3F000000 + 0x7E000000;
+    smi_gpio_init(*gpio_regs);
+
+    /* Map CLK regs */
+    map_segment(clk_regs, CLK_BASE, PAGE_SIZE);
+
+    cxt->smi_regs  = smi_regs;
+    cxt->clk_regs  = clk_regs;
+    cxt->gpio_regs = gpio_regs;
+    cxt->dma_regs  = dma_regs;
+}
+
+void smi_unmap_cxt(SMI_CXT* cxt)
+{
+    unmap_segment(cxt->gpio_regs, PAGE_SIZE);
+    unmap_segment(cxt->dma_regs, NADJ_CHANNELS * PAGE_SIZE);
+    unmap_segment(cxt->smi_regs, PAGE_SIZE);
+    unmap_segment(cxt->clk_regs, PAGE_SIZE);
+}
+
+void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig)
+{
+    rw->rconfig = rconfig;
+    rw->wconfig = wconfig;
+    rw->clk = clk;
+    cxt->rw_config = rw;
+}
+
+int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer)
+{
+    int fd_sync_cpu = open("/sys/class/u-dma-buf/udmabuf0/sync_for_cpu", O_WRONLY);
+    int fd_sync_dev = open("/sys/class/u-dma-buf/udmabuf0/sync_for_device", O_WRONLY);
+
+    if(fd_sync_cpu < 0 || fd_sync_dev < 0)
+    {
+        if (fd_sync_cpu >= 0) close(fd_sync_cpu);
+        if (fd_sync_dev >= 0) close(fd_sync_dev);
+        ERROR("Could not open u-dma-buf sync");
+        
+        return -1;
+    }
+
+    dma_buffer_init(dma_buffer, 1, 1);
+
+    cxt->fd_sync_dev = fd_sync_dev;
+    cxt->fd_sync_cpu = fd_sync_cpu;
+    cxt->dma_buffer = dma_buffer;
+}
+
+void smi_unmap_udmabuf(SMI_CXT* cxt)
+{
+    unmap_segment(cxt->dma_buffer, DMA_BUFFER_SIZE);
+    if (cxt->fd_sync_cpu >= 0) close(cxt->fd_sync_cpu);
+    if (cxt->fd_sync_dev >= 0) close(cxt->fd_sync_dev);
+}
 
 /* ns: Clock period; even number 2 -> 30*/
 void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold)
@@ -357,7 +417,6 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     {
         if (cs->fields.rxd) {
             volatile uint32_t word = d->value;
-            printf("Word: %u\n", word);
             ret_data[count++] = word;
         }
 
@@ -517,7 +576,6 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
-    printf("Word Reads: %d\n", word_reads);
     int raw_data[word_reads];
 
     dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
@@ -538,7 +596,6 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
     l->fields.length = len;
     a->fields.addr = addr;
-    printf("Address: %d\n", a->fields.addr);
 
     smi_start(cxt);
     count = smi_read_await(cxt, raw_data, word_reads);
@@ -885,7 +942,7 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ra
     for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
-        printf("Word: %d\n", raw[0]);
+        //printf("Word: %d\n", raw[0]);
 
         uint16_t d0 = ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8);
         uint16_t d1 = ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0);
@@ -920,7 +977,7 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pa
     size_t full_words = count / 2;
     size_t tail_bytes = count % 2;
 
-    printf("Swap Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
+    //printf("Swap Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
     for(size_t i = 0; i < full_words; i++)
     {
@@ -987,7 +1044,7 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_
         uint32_t word = raw[i];
         smi_unpack_rgb565_9_word(word, word_buffer);
 
-        printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
+        //printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
 
         dst[0] = word_buffer[0];
         dst[1] = word_buffer[1];
@@ -1036,7 +1093,7 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_
         uint32_t word = raw[i];
 
         smi_unpack_rgb565_9_word(word, word_buffer);
-        printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
+        //printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
 
         dst[0] = word_buffer[1];
         dst[1] = word_buffer[0];
@@ -1086,7 +1143,7 @@ void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_r
     {
         uint32_t word = raw[2 * full_words];
 
-        uint16_t d0 = (word >> 8) & 0xFFFF;
+        uint16_t d0 = (word >> 8) & 0xFF;
         dst[0] = d0;
     }
 }
@@ -1102,7 +1159,7 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack
         uint32_t word  = raw[i];
 
         uint16_t d0 = ((word >> 0) & 0xFFFF);
-        uint16_t d1 = ((word >> 16));
+        uint16_t d1 = ((word >> 16) & 0xFFFF);
 
         dst[0] = d0;
         dst[1] = d1;
@@ -1116,7 +1173,7 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack
 
         uint16_t bytes[4] = {
             ((word >> 0) & 0xFFFF),
-            ((word >> 16))
+            ((word >> 16) & 0xFFFF)
         };
 
         for(size_t i = 0; i < tail_bytes; i++)

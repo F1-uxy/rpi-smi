@@ -9,13 +9,14 @@
 
 #include "gpio.h"
 #include "dma.h"
+#include "errors.h"
 
 size_t read_sysfile_size(const char* file)
 {
     FILE* f = fopen(file, "r");
     if(!f)
     {
-        perror("ERROR: File size couldn't be read\n");
+        ERROR("File size couldn't be read");
         return -1;
     }
 
@@ -31,7 +32,7 @@ void* read_sysfile_phys_addr(const char* file)
     FILE* f = fopen(file, "r");
     if(!f)
     {
-        perror("ERROR: File size couldn't be read\n");
+        ERROR("File size couldn't be read");
         return NULL;
     }
 
@@ -48,7 +49,7 @@ int write_sync(int fd, uint64_t val)
 
     if(fd < 0)
     {
-        perror("ERROR: File size couldn't be read\n");
+        ERROR("File size couldn't be read");
         return -1;
     }
 
@@ -76,7 +77,7 @@ void* map_segment(MEM_MAP* map, uintptr_t addr, int size)
     size = PAGE_ROUNDUP(size);
     if((fd = open("/dev/mem", O_RDWR | O_SYNC)) < 0)
     {
-        perror("Error: Could not open /dev/\n");
+        ERROR("Could not open /dev/");
         exit(1);
     }
 
@@ -85,7 +86,7 @@ void* map_segment(MEM_MAP* map, uintptr_t addr, int size)
 
     if(mem == MAP_FAILED)
     {
-        perror("Error: Could not map memory\n");
+        ERROR("Could not map memory");
         exit(1);
     }
 
@@ -139,7 +140,7 @@ int gpio_test(MEM_MAP gpio_regs, int pin)
 {
     if(pin > 53)
     {
-        perror("Pin out of range\n");
+        ERROR("Pin out of range");
         return -1;
     }
 

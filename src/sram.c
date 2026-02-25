@@ -30,7 +30,7 @@ void sram_helloworld(SMI_CXT* cxt)
         ret[i] = 0;
     }
     //int len_read = smi_direct_read_arr(cxt, ret, 0, 12, SMI_ADDR_INC);
-    int len_read = smi_programmed_read_arr(cxt, ret, 5, 5);
+    int len_read = smi_programmed_read_arr(cxt, ret, 5, 3);
     if(len_read < 0)
     {
         ERROR("Did not read");
@@ -62,17 +62,18 @@ int testbench_read(SMI_CXT* cxt, size_t len)
 {
     int count = 0;
     int val = 0;
-    uint32_t ret[1024];
+    int block_len = 124; /* Can't get more than 248 in one go */
+    uint32_t ret[block_len];
     uint32_t ret_single;
 
     for(size_t i = 0; i < len; i++)
     {
         //count += smi_direct_read_arr(cxt, ret, 1, 1024, 0);
-        //count += smi_programmed_read_arr(cxt, ret, 1, 1024);
-        smi_direct_read(cxt, &ret[0], 0);
-        if(ret[0] == 0xA) count++;
+        count += smi_programmed_read_arr(cxt, ret, 1, block_len);
+        //smi_direct_read(cxt, &ret[0], 0);
+        //if(ret[0] == 0xA) count++;
         //printf("Val: %d\n", ret[0]);
-        ret[0] = 0;
+        //ret[0] = 0;
     }
 
     return count;

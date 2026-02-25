@@ -61,15 +61,6 @@ typedef enum {
     WIDTH_9  = 3 
 } smi_width_t;
 
-typedef struct {
-    uint8_t width;
-    uint32_t data_mask;
-    uint8_t shifts[2];
-} SMI_LAYOUT;
-
-extern SMI_LAYOUT smi_layout[4];
-
-
 /* SMI Control and Status Register */
 typedef struct {
     volatile uint32_t   enable : 1, /* LSB to MSB                                                   */
@@ -259,11 +250,7 @@ typedef union {
     volatile uint32_t value;
 }SMI_FD __attribute__((aligned(32)));
 
-void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold);
-void smi_gpio_init(MEM_MAP gpio_map);
-
 void smi_cs_init(volatile SMI_CS* cs);
-
 
 void smi_8b_init(MEM_MAP gpio_map);
 void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
@@ -357,19 +344,32 @@ typedef struct {
     bool dma;
 
     int fd_sync_dev;
+    int fd_sync_cpu;
 
     SMI_DMA dma_config;
-    SMI_LAYOUT layout;
 
     MEM_MAP* smi_regs;
     MEM_MAP* gpio_regs;
     MEM_MAP* dma_regs;
+    MEM_MAP* clk_regs;
     MEM_MAP* dma_buffer;
+
 
     SMI_RW* rw_config;
 
 } SMI_CXT;
 
+/* --- SMI Setup Helpers --- */
+void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs);
+void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig);
+int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer);
+
+void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold);
+void smi_gpio_init(MEM_MAP gpio_map);
+
+/* --- SMI Destructors --- */
+void smi_unmap_cxt(SMI_CXT* cxt);
+void smi_unmap_udmabuf(SMI_CXT* cxt);
 
 /* --- Interfaces --- */
 

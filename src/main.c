@@ -17,30 +17,21 @@
 int main()
 {
     MEM_MAP dma_buffer, dma_regs, clk_regs, smi_regs, gpio_regs;
+    SMI_CXT cxt;
 
-    int fd_sync_cpu = open("/sys/class/u-dma-buf/udmabuf0/sync_for_cpu", O_WRONLY);
-    int fd_sync_dev = open("/sys/class/u-dma-buf/udmabuf0/sync_for_device", O_WRONLY);
+    SMI_RW rw;
+    SMI_CLK clk;
+    SMI_READ rconfig;
+    SMI_WRITE wconfig;
+
+    rconfig.rwidth = SMI_8_BITS;
+    wconfig.wformat = SMI_RGB565;
+
+    smi_init_cxt_map(&cxt, &smi_regs, &clk_regs, &gpio_regs, &dma_regs);
+    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig);
     
-
-    /* Map u-dma buffer */
-    dma_buffer_init(&dma_buffer, 1, 1);
-    //clear_buf((unsigned char*)dma_buffer.virt, DMA_BUFFER_SIZE);
-
-    /* Map GPIO regs */
-    map_segment(&gpio_regs, GPIO_BASE, PAGE_SIZE);
-
-    /* Map DMA regs */
-    map_segment(&dma_regs, DMA_BASE, NADJ_CHANNELS * PAGE_SIZE);
-    //memset(dma_regs.virt, 0, 14 * PAGE_SIZE);
-
-    /* Map SMI regs */
-    map_segment(&smi_regs, SMI_BASE, PAGE_SIZE);
-    smi_regs.bus = smi_regs.phys - 0x3F000000 + 0x7E000000;
-    smi_gpio_init(gpio_regs);
-
-    /* Map CLK regs */
-    map_segment(&clk_regs, CLK_BASE, PAGE_SIZE);
-
+    smi_init_udmabuf(&cxt, &dma_buffer);
+    
     
     volatile uintptr_t* dma_cs = DMA_N_REG(dma_regs.virt, 0);
 
@@ -101,8 +92,8 @@ int main()
 
     smi_cs->value = 0;
 
-    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
-    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 4, 3, 6, 3);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
+    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 4, 3, 6, 3);
     //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 10, 2, 6, 2);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
@@ -111,29 +102,13 @@ int main()
     printf("SMI_CLK_DIV = 0x%08x\n", div);
 
     
-    SMI_CXT cxt;
-    SMI_RW rw;
-    SMI_READ rconfig;
-    SMI_WRITE wconfig;
-    rw.rconfig = &rconfig;
-    rw.wconfig = &wconfig;
-
-    rconfig.rwidth = SMI_8_BITS;
-    wconfig.wformat = SMI_RGB565;
-
-    cxt.rw_config = &rw;
-    cxt.smi_regs = &smi_regs;
-    cxt.dma_regs = &dma_regs;
-    cxt.dma_buffer = &dma_buffer;
-    cxt.fd_sync_dev = fd_sync_dev;
-
     smi_8b_init(gpio_regs);
     //smi_dma_setup(smi_regs);
     //smi_8b_write(smi_regs, 0x0, 1);
     //smi_dma_write(smi_regs, dma_regs, &dma_buffer, fd_sync_dev, cb, DMA_CHANNEL_0);
     //sleep(1);
     //smi_8byte_write(smi_regs, 8);
-    sram_helloworld(&cxt);
+    //sram_helloworld(&cxt);
     //sram_block_byte_write(smi_regs);
     int data_len = 12;
     uint32_t data32[data_len];
@@ -161,8 +136,15 @@ int main()
     //int read = testbench_read(&cxt, 1000000);
     //printf("Data read: %d\n", read);
 
-    unmap_segment(dma_buffer.virt, DMA_BUFFER_SIZE);
-    unmap_segment(dma_regs.virt, PAGE_SIZE);
+
+    rconfig.rwidth = SMI_8_BITS;
+    wconfig.wformat = SMI_RGB565;
+    int testbench_len = 20480;
+    int total = testbench_read(&cxt, testbench_len);
+    printf("Total transfers: %d\n", (total));
+
+    smi_unmap_cxt(&cxt);
+    smi_unmap_udmabuf(&cxt);
 
     return 0;
 }
