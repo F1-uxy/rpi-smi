@@ -334,12 +334,14 @@ typedef struct {
     uint8_t pixel_format;
     uint8_t pixel_value_mode;
     uint8_t device_settings_select; 
-    uint8_t interrupts;
     
     bool pad;
     bool tear;
     bool prdy;
     bool pxldata;
+    bool intr;
+    bool intt;
+    bool intd;
 
     bool dma;
 

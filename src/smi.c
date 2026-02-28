@@ -418,6 +418,7 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         if (cs->fields.rxd) {
             volatile uint32_t word = d->value;
             ret_data[count++] = word;
+            printf("Word: %d\n", word);
         }
 
         if(spin > 1024)
@@ -531,19 +532,9 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
 
-    //uint32_t raw_data[len];
-
-    cs->value = 0;
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-    cs->fields.enable = 1;
-    cs->fields.pxldat = 0;
-    cs->fields.pad = 0;
-
-    dsr->fields.rwidth = 0; /* 8bit read width */
-
+    dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
+    dcs->value = 0;
     dcs->fields.done = 1;
-
     dcs->fields.write = 0;
 
     da->fields.addr = addr;
@@ -551,9 +542,6 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
 
     dcs->fields.start = 1;
     int count = smi_read_await_direct(cxt, ret_data, addr, len, increment);
-    
-    //smi_pack_ratio_t t = smi_packed_ratio(cxt);
-    //smi_unpack(cxt, raw_data, ret_data, count, t);
     
     return count;
 }
@@ -572,7 +560,6 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
     volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW0);
 
-
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
@@ -582,17 +569,20 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
     dsw->fields.wswap = cxt->rw_config->wconfig->wswap;
 
-
     cs->value = 0;
     
     cs->fields.aferr = 1;
     cs->fields.seterr = 1;
 
-    cs->fields.pxldat = 1;
+    cs->fields.pxldat = cxt->pxldata;
 
     cs->fields.enable = 1;
     cs->fields.write = 0;
     cs->fields.clear = 1;
+    cs->fields.pad = cxt->pad;
+    cs->fields.prdy = cxt->prdy;
+    cs->fields.intr = cxt->intr;
+    cs->fields.intd = cxt->intd;
 
     l->fields.length = len;
     a->fields.addr = addr;
@@ -858,7 +848,6 @@ void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_
     for(size_t i = 0; i < full_words; i++)
     {
         uint32_t word = raw[i];
-
         uint8_t b1 = (word >>  0) & 0xFF;
         uint8_t b0 = (word >>  8) & 0xFF;
         uint8_t b3 = (word >> 16) & 0xFF;
@@ -876,6 +865,7 @@ void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_
     {
         uint32_t word = raw[full_words];
 
+        printf("Word: %u\n", word);
         uint8_t bytes[4] = {
             (word >>  8) & 0xFF,
             (word >>  0) & 0xFF,
@@ -1128,8 +1118,7 @@ void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_r
         uint32_t word2 = raw[2*i + 1];
 
         uint16_t d0 = (word >> 8) & 0xFFFF;
-        uint16_t d1 = ((word << 8) & 0xFF00) |
-                      ((word2 >> 16) & 0x00FF);
+        uint16_t d1 = ((word << 8) & 0xFF00) | ((word2 >> 16) & 0x00FF);
         uint16_t d2 = word2 & 0xFFFF;
 
         dst[0] = d0;
