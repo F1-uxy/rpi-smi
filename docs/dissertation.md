@@ -1,5 +1,11 @@
 ### Topics:
 
+#### Current Documentation:
+<ul>
+    <li> Current kernel driver is lackluster. Only supports 8 & 16 bit modes. Only uses 1 device bank. Doesn't implement specific packing modes or provide unpacking functionality.
+</ul>
+
+
 #### API Design
 <ul>
     <li> Defensive API vs Contract Based API
@@ -13,7 +19,17 @@
     <li> Important to pass the correct size data type for a given bus width
     <li> RGB565 & XRGB 18 bit swap - reversed bit order, unknown how to unpack
     <li> Why is 248 the limit to programmed read block size
+    <li> Automatically use DMA over a certain transfer size like the kernel
+    <li> How can I use the interrupts? Kernel module? User space? ; Attempted to catch IRQ 48 using INTD, INTT & INTR but couldn't make it work.
+    <li> RXD & TXD are swapped in the documentation.
 </ul>
+
+RXF -> TXE
+TXE -> RXF
+RXD -> TXD = When TXD = 0, TX FIFO is full and transfer direction is set to write
+TXD -> RXD
+RXR -> TXW
+TXW -> RXR
 
 
 #### Good Articles:
