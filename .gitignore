@@ -1,2 +1,11 @@
 .vscode/*
 build/*
+*.o
+
+# Kernel Module Ignores
+irq_test/*.ko
+irq_test/*.mod
+irq_test/*.mod.c
+irq_test/modules.order
+irq_test/Module.symvers
+irq_test/build/*
