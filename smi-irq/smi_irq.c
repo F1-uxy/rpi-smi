@@ -35,9 +35,6 @@ static irqreturn_t smi_handler(int irq, void* dev)
 {
     u32 cs_reg = readl(smi_base + SMIO_CS);
 
-    pr_info("SMI Counter: %d\n", counter++);
-    pr_info("CS_REG: %u ; CS_DONE\n", cs_reg, cs_reg & SMIO_CS_DONE);
-
     if(cs_reg & SMIO_CS_DONE)
     {
         writel(cs_reg & SMIO_CS_DONE, smi_base + SMIO_CS);
@@ -94,7 +91,7 @@ static inline void unregister_chrdevregion(void)
 static int smi_interrupt_init(void)
 {
     int ret = 0;
-    pr_info("%s: init\n", __func__);
+    pr_info("%s: SMI IRQ init\n", __func__);
 
     smi_base = ioremap(PI_23_REG_BASE + SMI_BASE_REG_OFFSET, SMI_SIZE);
     if(!smi_base) return -ENOMEM;
@@ -140,7 +137,7 @@ static int smi_interrupt_init(void)
 
 static void smi_interrupt_exit(void)
 {
-    pr_info("%s: exit\n", __func__);
+    pr_info("%s: SMI IRQ exit\n", __func__);
 
     synchronize_irq(IRQ_NO);
     free_irq(IRQ_NO, &dev);
