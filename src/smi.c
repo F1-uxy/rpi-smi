@@ -132,60 +132,12 @@ void smi_dma_setup(MEM_MAP smi_regs)
     }
 }
 
-void smi_direct_init(volatile SMI_CS* cs)
-{
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-    cs->fields.enable = 1;
-    cs->fields.pxldat = 0;
-}
-
 void smi_8b_init(MEM_MAP gpio_map)
 {
     for(int i = 0; i < 26; i++)
     {
         gpio_mode(gpio_map, i, GPIO_ALT1);
     }
-}
-
-int smi_programmed_write_old(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr)
-{
-    if(cs == NULL || l == NULL || a == NULL || d == NULL || data == NULL) 
-    {
-        perror("ERROR: SMI write byte NULL reference passed\n");
-        return -1;
-    }
-
-    cs->value = 0; /* Needed to clear any errors from previous transactions */
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-
-    cs->fields.enable = 1;
-    cs->fields.write = 1;
-    cs->fields.clear = 1;
-
-    l->value = length;
-    cs->fields.start = 1;
-
-    int count = 0;
-    while(count < length)
-    {
-        if(!cs->fields.txe)
-        {
-            a->fields.addr = addr + count;
-            d->value = data[count];
-            count++;
-            sleep(0);
-        }
-    }
-
-    while(!cs->fields.done)
-    {
-    }
-
-    cs->fields.done = 1;
-
-    return count;
 }
 
 void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel)
@@ -212,7 +164,9 @@ void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int 
     cs->fields.pxldat = 1;
     cs->fields.enable = 1;
     cs->fields.write = 1;
-
+    cs->fields.intd = 1;
+    cs->fields.intt = 0;
+    cs->fields.intr = 0;
 
     cb->dest_addr = REG32_BUS(smi_regs, SMIO_D);
     cb->ti = DMA_DEST_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_SRCE_INC;
@@ -220,159 +174,7 @@ void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int 
     cs->fields.start = 1;
     start_dma(dma_buffer, dma_regs, fd_sync_dev, 0, cb);
 
-    while(!cs->fields.done);
-}
-
-void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len)
-{
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
-    volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
-    volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
-
-    smi_programmed_write_old(cs, l, a, d, data, len, addr);
-}
-
-int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
-{
-    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32(smi_regs, SMIO_CS);
-    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32(smi_regs, SMIO_DA);
-    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32(smi_regs, SMIO_DCS);
-    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32(smi_regs, SMIO_DD);
-
-    cs->value = 0;
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-    cs->fields.enable = 1;
-
-    dcs->fields.done = 1;
-
-    dcs->fields.write = 1;
-
-    da->fields.addr = addr;
-    dd->fields.data = data;
-
-    dcs->fields.start = 1;
-
-    while (!dcs->fields.done)
-    {
-    }
-
-    dcs->fields.done = 1;
-}
-
-/* 8 bit data bus example */
-void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr)
-{
-    
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
-    volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
-    volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
-
-    cs->value = 0;
-    
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-
-    cs->fields.enable = 1;
-    cs->fields.write = 1;
-    cs->fields.clear = 1;
-
-    l->value = 1;
-    a->fields.addr = addr;
-    d->value = data;
-
-    cs->fields.start = 1;
-
-    while(!cs->fields.done);
-    cs->fields.done = 1;
-    
-    
-}
-
-int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len)
-{
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);    
-    volatile SMI_L*  l = (volatile SMI_L*) REG32(smi_regs, SMIO_L);
-    volatile SMI_A*  a = (volatile SMI_A*) REG32(smi_regs, SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32(smi_regs, SMIO_D);
-    volatile SMI_FD*  fd = (volatile SMI_FD*) REG32(smi_regs, SMIO_FD);
-
-    int count = 0;
-    
-    cs->value = 0;
-    
-    cs->fields.aferr = 1;
-    cs->fields.seterr = 1;
-
-    cs->fields.pxldat = 1;
-
-    cs->fields.enable = 1;
-    cs->fields.write = 0;
-    cs->fields.clear = 1;
-
-    l->value = len;
-    a->fields.addr = addr;
-
-    cs->fields.start = 1;
-    
-    while ((!cs->fields.done || cs->fields.rxd > 1) && (count < len)) {
-
-        if(cs->fields.seterr) 
-        {
-            ERROR("A, L or D register written to during programmed read");
-            cs->fields.seterr = 1;
-            return -EIO;
-        }
-
-        if (cs->fields.rxd) {
-            uint32_t word = d->value;
-            ret_data[count++] = (word >>  0) & 0xFF;
-            ret_data[count++] = (word >>  8) & 0xFF;
-            ret_data[count++] = (word >> 16) & 0xFF;
-            ret_data[count++] = (word >> 24) & 0xFF;
-        }
-    }
-
-    cs->fields.clear = 1;
-
-    return count;
-}
-
-int smi_8b_read(MEM_MAP smi_regs, uint8_t addr)
-{
-    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32(smi_regs, SMIO_CS);
-    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32(smi_regs, SMIO_DA);
-    volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32(smi_regs, SMIO_DCS);
-    volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32(smi_regs, SMIO_DD);
-    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
-
-    cs->value = 0;
-    cs->fields.clear = 1;
-    cs->fields.aferr = 1;
-    cs->fields.enable = 1;
-    cs->fields.pxldat = 0;
-    cs->fields.pad = 0;
-
-    dsr->fields.rwidth = 0; /* 8bit read width */
-
-    dcs->fields.done = 1;
-
-    dcs->fields.write = 0;
-
-    da->fields.addr = addr;
-    dd->value = 0; /* flush stale data */
-
-    dcs->fields.start = 1;
-
-    while (!dcs->fields.done);
-
-    uint8_t val = (dd->fields.data & 0xFF);
-
-    dcs->fields.done = 1;
-
-    return val;
+    //while(!cs->fields.done);
 }
 
 void smi_start(SMI_CXT* cxt)
@@ -388,6 +190,7 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
+    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     if(ret_data == NULL) return -EINVAL;
 
@@ -395,30 +198,19 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     int spin = 0;
 
     smi_timeout_ns deadline;
+    
     deadline = start_timeout(PROG_READ_TIMEOUT_S);
 
-    while ((!cs->fields.done || cs->fields.rxd > 1)) 
+    /* We can assume that if data is leftover in the FIFO is hardware fault? */
+    while(count < len)
     {
-        if(spin > 1024)
+        printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
+        printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
+
+        if (cs->fields.rxd) 
         {
-            if(timeout_complete(deadline))
-            {
-                ERROR("Programmed read timeout");
-                cs->fields.clear = 1;
-                return -ETIMEDOUT;
-            }
-        }
-
-        spin++;
-    }
-
-    deadline = start_timeout(PROG_READ_TIMEOUT_S);
-    while((count < len))
-    {
-        if (cs->fields.rxd) {
             volatile uint32_t word = d->value;
             ret_data[count++] = word;
-            printf("Word: %d\n", word);
         }
 
         if(spin > 1024)
@@ -434,7 +226,11 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         spin++;
     }
 
-    cs->fields.done = 1;
+    if(cs->fields.rxd)
+    {
+        ERROR("Leftover data in the RX FIFO");
+    }
+    
 
     return count;
 }
@@ -560,6 +356,8 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
     volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW0);
 
+    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
+
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
@@ -569,9 +367,7 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
     dsw->fields.wswap = cxt->rw_config->wconfig->wswap;
 
-    cs->value = 0;
-    
-    cs->fields.aferr = 1;
+    cs->fields.aferr = 0;
     cs->fields.seterr = 1;
 
     cs->fields.pxldat = cxt->pxldata;
@@ -586,11 +382,10 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
     l->fields.length = len;
     a->fields.addr = addr;
-
     smi_start(cxt);
     count = smi_read_await(cxt, raw_data, word_reads);
     smi_unpack(cxt, raw_data, ret_data, len, ratio);
-
+    
     return len;
 
 }
@@ -602,33 +397,48 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
     volatile SMI_A*  a  = (volatile SMI_A*)  REG32((*cxt->smi_regs), SMIO_A);
     volatile SMI_D*  d  = (volatile SMI_D*)  REG32((*cxt->smi_regs), SMIO_D);
+    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
     int spin = 0;
 
     smi_timeout_ns deadline;
     deadline = start_timeout(PROG_WRITE_TIMEOUT_S);
-
-    a->fields.addr = addr;
-    cs->fields.write = 1;
-
-    while(count < len)
+    
+    while(!cs->fields.done)
     {
-        cs->fields.start = 1;
-        d->value = data[count++];
+        if(count < len + 1)
+        {
+            d->value = data[count++];
+        }
 
-        while(!cs->fields.done)
+        while(!cs->fields.txd)
         {
             if(spin > 1024)
             {
                 if(timeout_complete(deadline))
                 {
-                    ERROR("Programmed write await timeout");
+                    ERROR("Programmed write await timeout - TX is full");
                     cs->fields.clear = 1;
                     cs->fields.done = 1;
                     return -ETIMEDOUT;
                 }
+                spin = 0;
             }
+
+            spin++;
+        }
+        
+        if(spin > 1024)
+        {
+            if(timeout_complete(deadline))
+            {
+                ERROR("Programmed write await timeout");
+                cs->fields.clear = 1;
+                cs->fields.done = 1;
+                return -ETIMEDOUT;
+            }
+            spin = 0;
         }
 
         if (cs->fields.aferr)
@@ -642,6 +452,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
         spin++;
     }
 
+    printf("Write done = 1\n");
     return count;
 }
 
@@ -737,26 +548,34 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
+    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
+    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
     
-    cs->value = 0;
-    
-    cs->fields.aferr = 1;
+    cs->fields.aferr = 0;
     cs->fields.seterr = 1;
-
-    cs->fields.pxldat = 1;
-
+    cs->fields.done = 1;
     cs->fields.enable = 1;
     cs->fields.write = 1;
     cs->fields.clear = 1;
+    cs->fields.pxldat = 0;
+    cs->fields.pad = cxt->pad;
+    cs->fields.prdy = cxt->prdy;
+    cs->fields.intr = cxt->intr;
+    cs->fields.intd = cxt->intd;
+    cs->fields.intt = cxt->intt;
+
 
     l->fields.length = len;
     a->fields.addr = addr;
 
+    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
+    printf("AFERR %d ; SETERR %d\n", (cs->fields.aferr > 0), (cs->fields.seterr > 0));
+    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
     smi_start(cxt);
-
     count = smi_write_await(cxt, data, addr, len);
+    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
 
     return count;
 

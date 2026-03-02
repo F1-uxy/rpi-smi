@@ -103,9 +103,9 @@ int main()
 
     
     smi_8b_init(gpio_regs);
-    //smi_dma_setup(smi_regs);
+    smi_dma_setup(smi_regs);
     //smi_8b_write(smi_regs, 0x0, 1);
-    //smi_dma_write(smi_regs, dma_regs, &dma_buffer, fd_sync_dev, cb, DMA_CHANNEL_0);
+    //smi_dma_write(smi_regs, dma_regs, &dma_buffer, cxt.fd_sync_dev, cb, DMA_CHANNEL_0);
     //sleep(1);
     //smi_8byte_write(smi_regs, 8);
     sram_helloworld(&cxt);

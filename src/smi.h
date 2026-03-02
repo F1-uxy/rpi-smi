@@ -36,7 +36,6 @@
 #define SMIO_DA      0x38                        /* Direct address           */
 #define SMIO_DD      0x3c                        /* Direct data              */
 #define SMIO_FD      0x40                        /* FIFO debug               */
-#define SMIO_REGLEN  (SMI_FD * 4)
 
 /* SMI Interface Config */
 #define SMI_8_BITS  0
@@ -81,12 +80,12 @@ typedef struct {
                         _res   : 7,
                         prdy   : 1,
                         aferr  : 1,
-                        txw    : 1,
                         rxr    : 1,
-                        txd    : 1,
+                        txw    : 1,
                         rxd    : 1,
-                        txe    : 1,
-                        rxf    : 1;
+                        txd    : 1,
+                        rxf    : 1,
+                        txe    : 1;
 } SMI_CS_BITFIELD;
 
 typedef union {
@@ -106,14 +105,6 @@ typedef union {
 
 
 /* SMI Address Register */
-/*
-typedef struct {
-    volatile uint32_t   _x1     : 21,                        
-                        device  : 2,
-                        _x2     : 2,
-                        addr    : 6;
-} SMI_A_BITFIELD;*/
-
 typedef struct {
     volatile uint32_t   
                         addr    : 6,
@@ -250,20 +241,6 @@ typedef union {
     volatile uint32_t value;
 }SMI_FD __attribute__((aligned(32)));
 
-void smi_cs_init(volatile SMI_CS* cs);
-
-void smi_8b_init(MEM_MAP gpio_map);
-void smi_8b_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
-int smi_8b_direct_write(MEM_MAP smi_regs, uint8_t data, uint8_t addr);
-void smi_8byte_write(MEM_MAP smi_regs, uint8_t addr, uint8_t* data, int len);
-int smi_programmed_write_old(volatile SMI_CS* cs, volatile SMI_L* l, volatile SMI_A* a, volatile SMI_D* d, int8_t* data, int length, int8_t addr);
-
-void smi_dma_setup(MEM_MAP smi_regs);
-void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel);
-
-int smi_8b_read(MEM_MAP smi_regs, uint8_t addr);
-int smi_programmed_read_old(MEM_MAP smi_regs, uint8_t addr, uint8_t* ret_data, uint8_t len);
-
 
 /* SMI Clock Config */
 typedef struct
@@ -367,7 +344,11 @@ void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfi
 int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer);
 
 void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold);
+void smi_8b_init(MEM_MAP gpio_map);
 void smi_gpio_init(MEM_MAP gpio_map);
+
+void smi_dma_setup(MEM_MAP smi_regs);
+void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel);
 
 /* --- SMI Destructors --- */
 void smi_unmap_cxt(SMI_CXT* cxt);

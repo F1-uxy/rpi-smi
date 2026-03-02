@@ -29,23 +29,4 @@ static inline int timeout_complete(smi_timeout_ns deadline)
     return now_ns >= deadline;
 }
 
-
-/*
-static inline void start_timeout(smi_timeout* start)
-{
-    clock_gettime(CLOCK_MONOTONIC, start);
-}
-
-static inline int timeout_complete(smi_timeout* start, double t_length)
-{
-    smi_timeout now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-
-    double elapsed = (now.tv_sec - start->tv_sec) +
-                     (now.tv_nsec - start->tv_nsec)/1e9;
-
-    return elapsed >= t_length;
-}
-*/
-
 #endif
