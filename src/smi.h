@@ -53,13 +53,6 @@ typedef struct {
     uint8_t out_pixels;
 } smi_pack_ratio_t;
 
-typedef enum {
-    WIDTH_8  = 0,
-    WIDTH_16 = 1,
-    WIDTH_18 = 2,
-    WIDTH_9  = 3 
-} smi_width_t;
-
 /* SMI Control and Status Register */
 typedef struct {
     volatile uint32_t   enable : 1, /* LSB to MSB                                                   */

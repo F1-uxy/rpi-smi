@@ -204,8 +204,8 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     /* We can assume that if data is leftover in the FIFO is hardware fault? */
     while(count < len)
     {
-        printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
-        printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
+        //printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
+        //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
 
         if (cs->fields.rxd) 
         {
@@ -452,7 +452,6 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
         spin++;
     }
 
-    printf("Write done = 1\n");
     return count;
 }
 
@@ -551,7 +550,7 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
     volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
-    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
+    //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
     
     cs->fields.aferr = 0;
     cs->fields.seterr = 1;
@@ -570,12 +569,8 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
     l->fields.length = len;
     a->fields.addr = addr;
 
-    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
-    printf("AFERR %d ; SETERR %d\n", (cs->fields.aferr > 0), (cs->fields.seterr > 0));
-    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
     smi_start(cxt);
     count = smi_write_await(cxt, data, addr, len);
-    printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
 
     return count;
 
@@ -684,7 +679,6 @@ void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_
     {
         uint32_t word = raw[full_words];
 
-        printf("Word: %u\n", word);
         uint8_t bytes[4] = {
             (word >>  8) & 0xFF,
             (word >>  0) & 0xFF,
