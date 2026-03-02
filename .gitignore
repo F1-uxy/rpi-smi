@@ -1,6 +1,7 @@
 .vscode/*
 build/*
 *.o
+deps/
 
 # Kernel Module Ignores
 smi-irq/build/
