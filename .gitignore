@@ -1,2 +1,15 @@
 .vscode/*
 build/*
+*.o
+deps/
+
+# Kernel Module Ignores
+smi-irq/build/
+smi-irq/*.ko
+smi-irq/*.o
+smi-irq/*.mod
+smi-irq/*.mod.c
+smi-irq/modules.order
+smi-irq/Module.symvers
+smi-irq/*.cmd
+smi-irq/smi_probe.c

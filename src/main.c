@@ -92,8 +92,8 @@ int main()
 
     smi_cs->value = 0;
 
-    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
-    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 4, 3, 6, 3);
+    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 4, 3, 6, 3);
     //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 10, 2, 6, 2);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
@@ -103,12 +103,12 @@ int main()
 
     
     smi_8b_init(gpio_regs);
-    //smi_dma_setup(smi_regs);
+    smi_dma_setup(smi_regs);
     //smi_8b_write(smi_regs, 0x0, 1);
-    //smi_dma_write(smi_regs, dma_regs, &dma_buffer, fd_sync_dev, cb, DMA_CHANNEL_0);
+    //smi_dma_write(smi_regs, dma_regs, &dma_buffer, cxt.fd_sync_dev, cb, DMA_CHANNEL_0);
     //sleep(1);
     //smi_8byte_write(smi_regs, 8);
-    //sram_helloworld(&cxt);
+    sram_helloworld(&cxt);
     //sram_block_byte_write(smi_regs);
     int data_len = 12;
     uint32_t data32[data_len];
@@ -136,12 +136,13 @@ int main()
     //int read = testbench_read(&cxt, 1000000);
     //printf("Data read: %d\n", read);
 
-
+    /*
     rconfig.rwidth = SMI_8_BITS;
     wconfig.wformat = SMI_RGB565;
     int testbench_len = 20480;
     int total = testbench_read(&cxt, testbench_len);
     printf("Total transfers: %d\n", (total));
+    */
 
     smi_unmap_cxt(&cxt);
     smi_unmap_udmabuf(&cxt);
