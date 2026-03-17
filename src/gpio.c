@@ -7,7 +7,6 @@
 #include <string.h>
 #include <time.h>
 
-#include "gpio.h"
 #include "dma.h"
 #include "errors.h"
 

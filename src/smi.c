@@ -22,7 +22,7 @@ void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MA
 
     /* Map SMI regs */
     map_segment(smi_regs, SMI_BASE, PAGE_SIZE);
-    smi_regs->bus = smi_regs->phys - 0x3F000000 + 0x7E000000;
+    smi_regs->bus = smi_regs->phys - PHYS_REG_BASE + 0x7E000000;
     smi_gpio_init(*gpio_regs);
 
     /* Map CLK regs */
@@ -204,8 +204,6 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     /* We can assume that if data is leftover in the FIFO is hardware fault? */
     while(count < len)
     {
-        //printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
-        //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
 
         if (cs->fields.rxd) 
         {
@@ -225,6 +223,10 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 
         spin++;
     }
+
+    //printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
+    //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
+
 
     if(cs->fields.rxd)
     {
@@ -361,7 +363,8 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
-    int raw_data[word_reads];
+    uint32_t raw_data[word_reads];
+
 
     dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
     dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
@@ -379,14 +382,19 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     cs->fields.prdy = cxt->prdy;
     cs->fields.intr = cxt->intr;
     cs->fields.intd = cxt->intd;
+    cs->fields.pvmode = cxt->pixel_value_mode;
 
     l->fields.length = len;
     a->fields.addr = addr;
     smi_start(cxt);
     count = smi_read_await(cxt, raw_data, word_reads);
-    smi_unpack(cxt, raw_data, ret_data, len, ratio);
+
+    /*  Unpack all the raw data even if we didn't fill the buffer during reads.
+        We can't count the individual reads when packed, only the overall words read.
+    */
+    cxt->pxldata ? smi_unpack(cxt, raw_data, ret_data, word_reads, ratio) : smi_truncate(cxt, raw_data, ret_data, count);
     
-    return len;
+    return count;
 
 }
 
@@ -656,10 +664,8 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
 void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint8_t* dst = out;
-    size_t full_words = count / 4;
-    size_t tail_bytes = count % 4;
 
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word = raw[i];
         uint8_t b1 = (word >>  0) & 0xFF;
@@ -674,33 +680,13 @@ void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_
 
         dst += 4;
     }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-
-        uint8_t bytes[4] = {
-            (word >>  8) & 0xFF,
-            (word >>  0) & 0xFF,
-            (word >> 24) & 0xFF,
-            (word >> 16) & 0xFF
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
-    }
 }
 
 void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint8_t* dst = out;
 
-    size_t full_words = count / 3;
-    size_t tail_bytes = count % 3;
-
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word = raw[i];
 
@@ -714,22 +700,6 @@ void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count, smi_pack_ra
 
         dst += 3;
     }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-
-        uint8_t bytes[3] = {
-            (word >> 16) & 0xFF,
-            (word >>  8) & 0xFF,
-            (word >>  0) & 0xFF
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
-    }
 }
 
 /* 
@@ -739,34 +709,16 @@ void smi_unpack_xrgb_8(const uint32_t* raw, void* out, size_t count, smi_pack_ra
 void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / ratio.out_pixels;
-    size_t tail_bytes = count % ratio.out_pixels;
 
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word = raw[i];
-        //printf("Word: %d\n", raw[0]);
 
         uint16_t d0 = ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8);
         uint16_t d1 = ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0);
         dst[0] = d0;
         dst[1] = d1;
         dst += 2;
-    }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-
-        uint16_t bytes[2] = {
-            ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8),
-            ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0)
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
     }
 }
 
@@ -777,12 +729,9 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ra
 void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / 2;
-    size_t tail_bytes = count % 2;
-
     //printf("Swap Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word = raw[i];
 
@@ -791,21 +740,6 @@ void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pa
         dst[0] = d0;
         dst[1] = d1;
         dst += 2;
-    }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-
-        uint16_t bytes[2] = {
-            ((word >> 2) & 0x3F) | ((word >> 4) & 0x1C0),
-            ((word >> 13) & 0x7) | ((word >> 15) & 0x1F8)
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
     }
 }
 
@@ -838,11 +772,9 @@ static inline void smi_unpack_rgb565_9_word(uint32_t word, uint16_t out[4])
 void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / 4;
-    size_t tail_bytes = count % 4;
     uint16_t word_buffer[4];
 
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word = raw[i];
         smi_unpack_rgb565_9_word(word, word_buffer);
@@ -855,17 +787,6 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_
         dst[3] = word_buffer[3];
 
         dst += 4;
-    }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-        smi_unpack_rgb565_9_word(word, word_buffer);
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = word_buffer[i];
-        }
     }
 }
 
@@ -887,11 +808,9 @@ static inline void apply_swap_16(uint16_t w[4])
 void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / 4;
-    size_t tail_bytes = count % 4;
     uint16_t word_buffer[4];
 
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word = raw[i];
 
@@ -905,27 +824,14 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_
 
         dst += 4;
     }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-        smi_unpack_rgb565_9_word(word, word_buffer);
-        apply_swap_16(word_buffer);
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = word_buffer[i];
-        }
-    }
 }
 
 void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / 2;
-    size_t tail_bytes = count % 2;
+    size_t pairs = count / 2;
 
-    for (size_t i = 0; i < full_words; i++)
+    for (size_t i = 0; i < pairs; i++)
     {
         uint32_t word  = raw[2*i];
         uint32_t word2 = raw[2*i + 1];
@@ -940,23 +846,13 @@ void smi_unpack_xrgb_16(const uint32_t* raw, void* out, size_t count, smi_pack_r
 
         dst += 3;
     }
-
-    if (tail_bytes)
-    {
-        uint32_t word = raw[2 * full_words];
-
-        uint16_t d0 = (word >> 8) & 0xFF;
-        dst[0] = d0;
-    }
 }
 
 void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    size_t full_words = count / 2;
-    size_t tail_bytes = count % 2;
 
-    for(size_t i = 0; i < full_words; i++)
+    for(size_t i = 0; i < count; i++)
     {
         uint32_t word  = raw[i];
 
@@ -967,21 +863,6 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack
         dst[1] = d1;
 
         dst += 2;
-    }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-
-        uint16_t bytes[4] = {
-            ((word >> 0) & 0xFFFF),
-            ((word >> 16) & 0xFFFF)
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
     }
 }
 
@@ -1004,8 +885,6 @@ void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count, smi_pack_r
 void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint32_t* dst = out;
-    size_t full_words = count / 2;
-    size_t tail_bytes = count % 2;
 
     for(size_t i = 0; i < count; i++)
     {
@@ -1020,22 +899,6 @@ void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack
         dst[1] = d1;
 
         dst += 2;
-    }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-        uint32_t w0 = (word >> 0) & 0xFFFF;
-        uint32_t w1 = (word >> 16) & 0xFFFF;
-        uint32_t bytes[4] = {
-            ((w0 << 2)  & 0x3E000) | ((w0 >> 3)  & 0x1000) | ((w0 << 1)  & 0xFFE),
-            ((w1 << 2)  & 0x3E000) | ((w1 >> 3)  & 0x1000) | ((w1 << 1)  & 0xFFE)
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
     }
 }
 
@@ -1052,8 +915,6 @@ static inline uint32_t reverse18(uint32_t v)
 void smi_unpack_rgb565_18_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint32_t* dst = out;
-    size_t full_words = count / 2;
-    size_t tail_bytes = count % 2;
 
     for(size_t i = 0; i < count; i++)
     {
@@ -1068,23 +929,6 @@ void smi_unpack_rgb565_18_swap(const uint32_t* raw, void* out, size_t count, smi
         dst[1] = d1;
 
         dst += 2;
-    }
-
-    if(tail_bytes)
-    {
-        uint32_t word = raw[full_words];
-        uint32_t w0 = reverse18((word >> 0) & 0xFFFF);
-        uint32_t w1 = reverse18((word >> 16) & 0xFFFF);
-
-        uint32_t bytes[4] = {
-            ((w0 << 2)  & 0x3E000) | ((w0 >> 3)  & 0x1000) | ((w0 << 1)  & 0xFFE),
-            ((w1 << 2)  & 0x3E000) | ((w1 >> 3)  & 0x1000) | ((w1 << 1)  & 0xFFE)
-        };
-
-        for(size_t i = 0; i < tail_bytes; i++)
-        {
-            dst[i] = bytes[i];
-        }
     }
 }
 
@@ -1124,12 +968,15 @@ void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_
     }
 
     ERROR("Unknown interface configuration - could not unpack data");
+    return;
 }
 
 smi_pack_ratio_t smi_packed_ratio(SMI_CXT* cxt)
 {
     int width = cxt->rw_config->rconfig->rwidth;
     int format = cxt->rw_config->wconfig->wformat;
+
+    if(cxt->pxldata == 0){ return (smi_pack_ratio_t){1,1}; }
 
     switch (width)
     {
@@ -1157,4 +1004,69 @@ smi_pack_ratio_t smi_packed_ratio(SMI_CXT* cxt)
 
     ERROR("Unknown interface configuration - using 1:1 ratio");
     return (smi_pack_ratio_t){1,1};
+}
+
+void smi_truncate_8(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+{
+    uint8_t* out = ret_data;
+    for(size_t i = 0; i < count; i++)
+    {
+        out[i] = data[i] & 0xFF;
+    }
+}
+
+void smi_truncate_9(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+{
+    uint16_t* out = ret_data;
+    for(size_t i = 0; i < count; i++)
+    {
+        out[i] = data[i] & 0x1FF;
+    }
+}
+
+void smi_truncate_16(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+{
+    uint16_t* out = ret_data;
+    for(size_t i = 0; i < count; i++)
+    {
+        out[i] = data[i] & 0xFFFF;
+    } 
+}
+
+void smi_truncate_18(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+{
+    uint32_t* out = ret_data;
+    for(size_t i = 0; i < count; i++)
+    {
+        out[i] = data[i] & 0x3FFFF;
+    }
+}
+
+void smi_truncate(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count)
+{
+    int width = cxt->rw_config->rconfig->rwidth;
+        
+    switch (width)
+    {
+    case SMI_8_BITS:
+        smi_truncate_8(cxt, data, ret_data, count);
+        break;
+
+    case SMI_9_BITS:
+        smi_truncate_9(cxt, data, ret_data, count);
+        break;
+
+    case SMI_16_BITS:
+        smi_truncate_16(cxt, data, ret_data, count);
+        break;
+
+    case SMI_18_BITS:
+        smi_truncate_18(cxt, data, ret_data, count);
+        break;
+
+    default:
+        ERROR("Unknown interface configuration - returning untruncated data");
+    }
+
+    return;
 }

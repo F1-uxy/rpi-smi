@@ -1,6 +1,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <pthread.h>
+#include <math.h>
 
 #include "smi.h"
 #include "errors.h"
@@ -8,8 +10,8 @@
 
 void sram_helloworld(SMI_CXT* cxt)
 {
-    cxt->rw_config->rconfig->rwidth = SMI_8_BITS;
-    cxt->rw_config->wconfig->wformat = SMI_XRGB;
+    cxt->rw_config->rconfig->rwidth = SMI_18_BITS;
+    cxt->rw_config->wconfig->wformat = SMI_RGB565;
     cxt->rw_config->wconfig->wswap = 0;
     cxt->pxldata = 1;
     cxt->pad = 0;
@@ -22,16 +24,16 @@ void sram_helloworld(SMI_CXT* cxt)
     //uint32_t clearData[] = {'\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'};
     
     printf("Writing\n");
-    //smi_direct_write_arr(cxt, data32, 0, 12, SMI_ADDR_INC);
+    smi_direct_write_arr(cxt, data32, 0, 12, SMI_ADDR_INC);
     //smi_programmed_write_arr(cxt, data32, 0, 12);
     sleep(0);
     printf("Reading\n");
-
-    uint8_t ret[12];
+    int len = 13;
+    uint32_t ret[len];
 
     //int len_read = smi_direct_read_arr(cxt, ret, 0, 12, SMI_ADDR_INC);
     
-    int len_read = smi_programmed_read_arr(cxt, ret, 5, 6);
+    int len_read = smi_programmed_read_arr(cxt, ret, 1, len);
 
     if(len_read < 0)
     {
@@ -39,7 +41,7 @@ void sram_helloworld(SMI_CXT* cxt)
         return;
     }
 
-    for(int i = 0; i < len_read; i++)
+    for(int i = 0; i < len; i++)
     {
         printf("i=%d ; Address: %x ; Value: %u ; ASCII: %c\n", i, (i % 64), ret[i], ret[i]);
     }
@@ -61,23 +63,179 @@ int testbench_write(SMI_CXT* cxt, size_t len)
     return count;
 }
 
-int testbench_read(SMI_CXT* cxt, size_t len)
+
+
+long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
 {
+    cxt->rw_config->rconfig->rwidth = SMI_18_BITS;
+    cxt->rw_config->wconfig->wformat = SMI_XRGB;
+    /*
+    SMI_XRGB
+    SMI_RGB565
+    */
+    cxt->rw_config->wconfig->wswap = 0;
+    cxt->pxldata = 1;
+    cxt->pixel_value_mode = 0;
+    cxt->pad = 0;
+    cxt->intd = 0;
+    cxt->intr = 0;
+    cxt->intt = 0;
+
     int count = 0;
     int val = 0;
-    int block_len = 124; /* Can't get more than 248 in one go */
     uint32_t ret[block_len];
     uint32_t ret_single;
+    size_t itr = len / block_len;
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
-    for(size_t i = 0; i < len; i++)
+    for(size_t i = 0; i < itr; i++)
     {
-        //count += smi_direct_read_arr(cxt, ret, 1, 1024, 0);
         count += smi_programmed_read_arr(cxt, ret, 1, block_len);
-        //smi_direct_read(cxt, &ret[0], 0);
-        //if(ret[0] == 0xA) count++;
-        //printf("Val: %d\n", ret[0]);
-        //ret[0] = 0;
     }
 
-    return count;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    
+    long total = (end.tv_sec - start.tv_sec) * 1000000000L +
+           (end.tv_nsec - start.tv_nsec);
+    /*
+    double seconds = total / 1e9;
+    double mbps = (len / seconds) / (1024.0 * 1024.0);
+    double mts  = (len / seconds) / 1e6;
+
+    printf("Total: %ld ns ; %f s\n", total, seconds);
+    printf("Throughput: %f MB/s ; %f MT/s\n", mbps, mts);
+    printf("Per read: %f ns\n", (double)total / len);
+    */
+    return total;   
+}
+
+void* cpu_load(void* args)
+{
+    volatile double x = 0;
+
+    while(1)
+    {
+        for(int i = 0; i < 1e9; i++)
+        {
+            x += sqrt(i);
+        }
+    }
+
+    return NULL;
+}
+
+
+#define TEST_ITERATIONS 5
+#define ITERATIONS 1048576
+#define DEVICE "RPI3B+"
+#define METHOD "SMI"
+#define WIDTH 18
+#define PACK "XRGB"
+
+void megbyte_load_block_test(SMI_CXT* cxt)
+{
+    FILE* csv = fopen("read.csv", "ab+");
+    if (!csv) {
+        perror("Failed to open CSV file");
+        return;
+    }
+
+    long times[TEST_ITERATIONS];
+
+    for(int block = 8; block <= 1048576/2; block *= 2)
+    {
+        long total = 0;
+        long time = 0;
+
+        printf(" --- WARMUP ---\n");
+        testbench_read(cxt, ITERATIONS, block);
+        printf(" --- START ---\n");
+        
+        for(int i = 0; i < TEST_ITERATIONS; i++)
+        {
+            time = testbench_read(cxt, ITERATIONS, block);
+            times[i] = time;
+            total += time;
+        }
+
+        double seconds = total / 1e9;
+        double average = seconds / TEST_ITERATIONS;
+        double transfers_per_sec = ITERATIONS / average;
+        double mbps = (transfers_per_sec * (WIDTH / 8.0)) / (1024.0 * 1024.0);
+        double mts  = (ITERATIONS / average) / 1e6;
+
+        double sum_sq = 0;
+        for(int r = 0; r < TEST_ITERATIONS; r++)
+        {
+            double run_sec = times[r] / 1e9;
+            sum_sq += (run_sec - average) * (run_sec - average);
+        }
+        double stddev = sqrt(sum_sq / TEST_ITERATIONS);
+
+        printf("\n --- %d FINAL ---\n", block);
+        printf("Total: %ld ns ; %f s\n", total, seconds);
+        printf("Average: %f\n", average);
+        printf("Throughput: %f MB/s ; %f MT/s\n", mbps, mts);
+        printf("Std deviation: %f s\n", stddev);
+
+        fprintf(csv, "%s,%s,%d,%s,%d,%.9f,%.6f,%.6f,%.6f\n",
+                DEVICE, METHOD, WIDTH, PACK, block, average, stddev, mbps, mts);
+    }
+
+    fclose(csv);
+}
+
+void megbyte_load_thread_test(SMI_CXT* cxt)
+{
+    int block = 2048;
+    long total = 0;
+    long time = 0;
+    long times[TEST_ITERATIONS];
+
+    for(int threads = 1; threads <= 256; threads *= 2)
+    {
+
+        pthread_t load_threads[threads];
+
+        for(int i = 0; i < threads; i++)
+        {
+            pthread_create(&load_threads[i], NULL, cpu_load, NULL);
+        }
+
+        printf(" --- WARMUP ---\n");
+        testbench_read(cxt, ITERATIONS, block);
+        printf(" --- START ---\n");
+        
+        for(int i = 0; i < TEST_ITERATIONS; i++)
+        {
+            time = testbench_read(cxt, ITERATIONS, block);
+            times[i] = time;
+            total += time;
+        }
+
+        double seconds = total / 1e9;
+        double average = seconds / TEST_ITERATIONS;
+        double transfers_per_sec = ITERATIONS / average;
+        double mbps = (transfers_per_sec * (8.0 / 8.0)) / (1024.0 * 1024.0);
+        double mts  = (ITERATIONS / average) / 1e6;
+
+        printf("\n --- %d FINAL ---\n", threads);
+        printf("Total: %ld ns ; %f s\n", total, seconds);
+        printf("Average: %f\n", average);
+        printf("Throughput: %f MB/s ; %f MT/s\n", mbps, mts);
+        
+        
+        double sum_sq = 0;
+        for(int r = 0; r < TEST_ITERATIONS; r++)
+        {
+            double run_sec = times[r] / 1e9;
+            sum_sq += (run_sec - average) * (run_sec - average);
+        }
+        double stddev = sqrt(sum_sq / TEST_ITERATIONS);
+        printf("Std deviation: %f s\n", stddev);
+
+        total = 0;
+    }
+    
 }
