@@ -31,8 +31,13 @@ TXD -> RXD
 RXR -> TXW
 TXW -> RXR
 
+#### Benchmarking
+The benchmark enviornment:
+<ul>
+    <li> GCC -03 optimisation
+    <li> -march=native to enable architecture specific functionality
+</ul>
 
 #### Good Articles:
-
 [LUT vs Branches](https://specbranch.com/posts/lookup-tables/)
 [Raspberry Pi Memory Heirachy](https://sandsoftwaresound.net/raspberry-pi/raspberry-pi-gen-1/memory-hierarchy/)
