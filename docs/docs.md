@@ -1,6 +1,7 @@
 ### Secondary Memory Interface
 
 #### Control & Status Register
+The status and control register controls non-direct transfers and monitors peripheral status.
 
 | Field  | Description                                                                                                                                                                                                                                                                                                                                    | Access |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -15,7 +16,7 @@
 | INTD   | Interrupt while DONE = 1                                                                                                                                                                                                                                                                                                                       | R/W    |
 | INTT   | Interrupt while TXW = 1                                                                                                                                                                                                                                                                                                                        | R/W    |
 | INTR   | Interrupt while RXR = 1                                                                                                                                                                                                                                                                                                                        | R/W    |
-| PVMODE |                                                                                                                                                                                                                                                                                                                                                |        |
+| PVMODE | Pixel Value Mode. Transmit data is taken from the pixel value interface rather than the AXI input.                                                                                                                                                                                                                                             |        |
 | SETERR | Setup error has occured. Setup registers were written to when enabled. Can be cleared by writing 1                                                                                                                                                                                                                                             | R/W    |
 | PXLDAT | Enable pixel formatting modes. Data in the FIFO's will be packed to match the pixel format selected                                                                                                                                                                                                                                            | R/W    |
 | EDREQ  | External DREQ received. Indicates the status of the external devices DREQ when in DMAP mode                                                                                                                                                                                                                                                    | R      |
@@ -27,6 +28,31 @@
 | RXD    | RX FIFO contains data. 0 = RX FIFO contains no data or the transfer direction is set to WRITE. 1 = RX FIFO contains at least 1 word of data that can be read and the transfer direction is set to READ                                                                                                                                         | R      |
 | TXE    | RX FIFO is empty.                                                                                                                                                                                                                                                                                                                              | R      |
 | RXF    | RX FIFO is full.                                                                                                                                                                                                                                                                                                                               | R      |
+
+
+#### SMI Transfer length Register
+The SMI length register is used to specify the number of transfers on the SMI bus in words. The word width is configured by the DSR & DSW registers. During a transfer the register reads as the number of words transferred so far.
+
+| Field  | Width | Description                                                                                                                                | Access |
+| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| Length | 31:0  | Write: Sets the number of words to transfer over the external bus. Read: During a transfer contains the number of words transferred so far | R/W    |
+
+
+#### SMI Address Register Defintion
+The SMI address register is used to specify the address for a given transfer. Device settings can be selected using this register.
+
+| Field  | Width | Description                                                         | Access |
+| ------ | ----- | ------------------------------------------------------------------- | ------ |
+| ADDR   | 5:0   | Address to be used for transfers and presented on the SMI bus       | R/W    |
+| DEVICE | 1:0   | Which set of device settings should be used for this transfer (0-4) | R/W    |
+
+
+#### SMI Data Register
+The SMI data register is used to interface with the transmit FIFOs. Data written to the SMI_D register is placed in the transmit FIFO. Data read from the SMI_D register is taken from the recieve FIFO.
+
+| Field | Width | Description                                                                  | Access |
+| ----- | ----- | ---------------------------------------------------------------------------- | ------ |
+| DATA  | 31:0  | Reading returns the top value of RX FIFO. Writing writes to back of TX FIFO. | R/W    |
 
 
 ### u-dma-buf:
