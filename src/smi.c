@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include "smi.h"
 #include "clk.h"
@@ -28,6 +29,16 @@ void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MA
     /* Map CLK regs */
     map_segment(clk_regs, CLK_BASE, PAGE_SIZE);
 
+    /* Allocate raw buffer */
+    cxt->raw_buffer.buf = malloc(1024 * sizeof(uint32_t));
+    cxt->raw_buffer.size = (1024);
+
+    if(!cxt->raw_buffer.buf)
+    {
+        ERROR("Raw buffer allocation failed");
+        exit(1);
+    }
+
     cxt->smi_regs  = smi_regs;
     cxt->clk_regs  = clk_regs;
     cxt->gpio_regs = gpio_regs;
@@ -40,6 +51,13 @@ void smi_unmap_cxt(SMI_CXT* cxt)
     unmap_segment(cxt->dma_regs, NADJ_CHANNELS * PAGE_SIZE);
     unmap_segment(cxt->smi_regs, PAGE_SIZE);
     unmap_segment(cxt->clk_regs, PAGE_SIZE);
+
+    if(cxt->raw_buffer.buf != NULL)
+    {
+        free(cxt->raw_buffer.buf);
+    }
+
+    cxt->raw_buffer.size = 0;
 }
 
 void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig)
@@ -363,8 +381,20 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
-    uint32_t raw_data[word_reads];
 
+    if(word_reads > cxt->raw_buffer.size)
+    {
+        uint32_t* new_buf = realloc(cxt->raw_buffer.buf, word_reads * sizeof(uint32_t));
+        if(!new_buf)
+        {
+            ERROR("Reallocation of raw buffer failed");
+            return -1;
+        }
+        cxt->raw_buffer.buf = new_buf;
+        cxt->raw_buffer.size = word_reads;
+    }
+
+    uint32_t* raw_data = cxt->raw_buffer.buf;
 
     dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
     dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
@@ -374,7 +404,6 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     cs->fields.seterr = 1;
 
     cs->fields.pxldat = cxt->pxldata;
-
     cs->fields.enable = 1;
     cs->fields.write = 0;
     cs->fields.clear = 1;

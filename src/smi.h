@@ -300,6 +300,11 @@ typedef struct
 /* SMI Context */
 
 typedef struct {
+    uint32_t* buf;
+    size_t size;
+} SMI_RAW_BUF;
+
+typedef struct {
     uint8_t interface_width;
     uint8_t pixel_format;
     uint8_t pixel_value_mode;
@@ -317,6 +322,8 @@ typedef struct {
 
     int fd_sync_dev;
     int fd_sync_cpu;
+
+    SMI_RAW_BUF raw_buffer;
 
     SMI_DMA dma_config;
 
