@@ -12,6 +12,7 @@
 #include "smi.h"
 #include "clk.h"
 #include "sram.h"
+#include "errors.h"
 
 
 int main()
@@ -25,14 +26,23 @@ int main()
     SMI_WRITE wconfig;
 
     rconfig.rwidth = SMI_8_BITS;
+    rconfig.fsetup = 0;
+    rconfig.rhold = 2;
+    rconfig.rpace = 2;
+    rconfig.rsetup = 2;
+
+    wconfig.wwidth = SMI_8_BITS;
     wconfig.wformat = SMI_RGB565;
+    wconfig.whold = 2;
+    wconfig.wpace = 2;
+    wconfig.wsetup = 2;
+
 
     smi_init_cxt_map(&cxt, &smi_regs, &clk_regs, &gpio_regs, &dma_regs);
-    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig);
+    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig, SMI_DEVICE2);
     
     smi_init_udmabuf(&cxt, &dma_buffer);
-    
-    
+    LOG("This is a test log message");
     volatile uintptr_t* dma_cs = DMA_N_REG(dma_regs.virt, 0);
 
     /*
@@ -86,15 +96,16 @@ int main()
     cb->tfr_len = strlen(msg);
 
     volatile SMI_CS* smi_cs  = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);
-    volatile SMI_DSR* smi_dsr = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
-    volatile SMI_DSW* smi_dsw = (volatile SMI_DSW*) REG32(smi_regs, SMIO_DSW0);
+    volatile SMI_DSR* smi_dsr0 = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
+    volatile SMI_DSW* smi_dsw0 = (volatile SMI_DSW*) REG32(smi_regs, SMIO_DSW0);
     
 
     smi_cs->value = 0;
 
-    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
-    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 2, 2, 2, 2);
-    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 10, 2, 6, 2);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr0, smi_dsw0, 30, 63, 127, 63);
+    init_smi_clk(smi_cs, clk_regs, smi_regs, 2);
+    //sleep(1);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr1, smi_dsw1, 8, 2, 2, 2);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
 

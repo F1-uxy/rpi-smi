@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <math.h>
+#include <stdlib.h>
 
 #include "smi.h"
 #include "errors.h"
@@ -67,8 +68,8 @@ int testbench_write(SMI_CXT* cxt, size_t len)
 
 long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
 {
-    cxt->rw_config->rconfig->rwidth = SMI_18_BITS;
-    cxt->rw_config->wconfig->wformat = SMI_XRGB;
+    cxt->rw_config->rconfig->rwidth = SMI_8_BITS;
+    cxt->rw_config->wconfig->wformat = SMI_RGB565;
     /*
     SMI_XRGB
     SMI_RGB565
@@ -84,6 +85,7 @@ long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
     int count = 0;
     int val = 0;
     uint32_t ret[block_len];
+    
     uint32_t ret_single;
     size_t itr = len / block_len;
     struct timespec start, end;
@@ -107,6 +109,7 @@ long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
     printf("Throughput: %f MB/s ; %f MT/s\n", mbps, mts);
     printf("Per read: %f ns\n", (double)total / len);
     */
+   
     return total;   
 }
 
@@ -130,8 +133,9 @@ void* cpu_load(void* args)
 #define ITERATIONS 1048576
 #define DEVICE "RPI3B+"
 #define METHOD "SMI"
-#define WIDTH 18
-#define PACK "XRGB"
+#define WIDTH 8
+#define PACK "RGB565"
+#define OPTIMISATION "O3"
 
 void megbyte_load_block_test(SMI_CXT* cxt)
 {
@@ -143,7 +147,7 @@ void megbyte_load_block_test(SMI_CXT* cxt)
 
     long times[TEST_ITERATIONS];
 
-    for(int block = 8; block <= 1048576/2; block *= 2)
+    for(int block = 8; block <= 1048576; block *= 2)
     {
         long total = 0;
         long time = 0;
@@ -179,8 +183,8 @@ void megbyte_load_block_test(SMI_CXT* cxt)
         printf("Throughput: %f MB/s ; %f MT/s\n", mbps, mts);
         printf("Std deviation: %f s\n", stddev);
 
-        fprintf(csv, "%s,%s,%d,%s,%d,%.9f,%.6f,%.6f,%.6f\n",
-                DEVICE, METHOD, WIDTH, PACK, block, average, stddev, mbps, mts);
+        fprintf(csv, "%s,%s,%s,%d,%s,%d,%.9f,%.6f,%.6f,%.6f\n",
+                DEVICE, OPTIMISATION, METHOD, WIDTH, PACK, block, average, stddev, mbps, mts);
     }
 
     fclose(csv);
