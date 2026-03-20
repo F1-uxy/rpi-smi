@@ -1,5 +1,6 @@
 CC=gcc
 CFLAGS = -g -Wall -O3 -march=native -std=c11 -D_POSIX_C_SOURCE=199309L
+SMIFLAGS = -DSMI_COLOURFULL_ERRORS -DSMI_VERBOSE
 LDFLAGS = -lm
 
 SRC_DIR = src
@@ -17,10 +18,10 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(SMIFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(SMIFLAGS) -c -o $@ $<
 
 .PHONY: clean
 clean:
