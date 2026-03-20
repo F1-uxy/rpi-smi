@@ -64,8 +64,8 @@ void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfi
 {
     rw->read_device_num = read_device;
     rw->write_device_num = write_device;
-    rw->rconfig = rconfig;
-    rw->wconfig = wconfig;
+    rw->rconfig[write_device] = *rconfig;
+    rw->wconfig[write_device] = *wconfig;
     rw->clk = clk;
     cxt->rw_config = rw;
 }
@@ -89,6 +89,8 @@ int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer)
     cxt->fd_sync_dev = fd_sync_dev;
     cxt->fd_sync_cpu = fd_sync_cpu;
     cxt->dma_buffer = dma_buffer;
+
+    return 0;
 }
 
 void smi_unmap_udmabuf(SMI_CXT* cxt)
@@ -99,7 +101,7 @@ void smi_unmap_udmabuf(SMI_CXT* cxt)
 }
 
 /* ns: Clock period; even number 2 -> 30*/
-void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, int ns)
+void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns)
 {    
     int divi = ns/2; /* Only valid on RPI 3 */
 
@@ -116,17 +118,10 @@ void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, int n
         while ((*REG32(clk_regs, CLK_SMI_CTL) & (1 << 7)) == 0) ;
         sleep(0);
     }
-
-    if (cs->fields.seterr)
-    {
-        perror("SMI SETERR true\n");
-        cs->fields.seterr = 1;
-    }
 }
 
 void smi_sync_context_device(SMI_CXT* cxt)
 {
-
     smi_configure_write_device(cxt, cxt->rw_config->write_device_num);
     smi_configure_read_device(cxt, cxt->rw_config->read_device_num);
 }
@@ -141,15 +136,15 @@ void smi_configure_read_device(SMI_CXT* cxt, uint8_t n)
 
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR(n));
     
-    dsr->fields.rstrobe = cxt->rw_config->rconfig->rstrobe;
-    dsr->fields.rdreq = cxt->rw_config->rconfig->rdreq;
-    dsr->fields.rpace = cxt->rw_config->rconfig->rpace;
-    dsr->fields.rpaceall = cxt->rw_config->rconfig->rpaceall;
-    dsr->fields.rhold = cxt->rw_config->rconfig->rhold;
-    dsr->fields.fsetup = cxt->rw_config->rconfig->fsetup;
-    dsr->fields.mode68 = cxt->rw_config->rconfig->mode68;
-    dsr->fields.rsetup = cxt->rw_config->rconfig->rsetup;
-    dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
+    dsr->fields.rstrobe = cxt->rw_config->rconfig[n].rstrobe;
+    dsr->fields.rdreq = cxt->rw_config->rconfig[n].rdreq;
+    dsr->fields.rpace = cxt->rw_config->rconfig[n].rpace;
+    dsr->fields.rpaceall = cxt->rw_config->rconfig[n].rpaceall;
+    dsr->fields.rhold = cxt->rw_config->rconfig[n].rhold;
+    dsr->fields.fsetup = cxt->rw_config->rconfig[n].fsetup;
+    dsr->fields.mode68 = cxt->rw_config->rconfig[n].mode68;
+    dsr->fields.rsetup = cxt->rw_config->rconfig[n].rsetup;
+    dsr->fields.rwidth = cxt->rw_config->rconfig[n].rwidth;
 }
 
 void smi_configure_write_device(SMI_CXT* cxt, uint8_t n)
@@ -162,15 +157,15 @@ void smi_configure_write_device(SMI_CXT* cxt, uint8_t n)
 
     volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW(n));
 
-    dsw->fields.wsetup = cxt->rw_config->wconfig->wformat;
-    dsw->fields.wwidth = cxt->rw_config->wconfig->wwidth;
-    dsw->fields.whold = cxt->rw_config->wconfig->whold;
-    dsw->fields.wpace = cxt->rw_config->wconfig->wpace;
-    dsw->fields.wpaceall = cxt->rw_config->wconfig->wpaceall;
-    dsw->fields.wstrobe = cxt->rw_config->wconfig->wstrobe;
-    dsw->fields.wdreq = cxt->rw_config->wconfig->wdreq;
-    dsw->fields.wswap = cxt->rw_config->wconfig->wswap;
-    dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
+    dsw->fields.wsetup = cxt->rw_config->wconfig[n].wformat;
+    dsw->fields.wwidth = cxt->rw_config->wconfig[n].wwidth;
+    dsw->fields.whold = cxt->rw_config->wconfig[n].whold;
+    dsw->fields.wpace = cxt->rw_config->wconfig[n].wpace;
+    dsw->fields.wpaceall = cxt->rw_config->wconfig[n].wpaceall;
+    dsw->fields.wstrobe = cxt->rw_config->wconfig[n].wstrobe;
+    dsw->fields.wdreq = cxt->rw_config->wconfig[n].wdreq;
+    dsw->fields.wswap = cxt->rw_config->wconfig[n].wswap;
+    dsw->fields.wformat = cxt->rw_config->wconfig[n].wformat;
 }
 
 void smi_gpio_init(MEM_MAP gpio_map)
@@ -210,12 +205,8 @@ void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int 
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);
     volatile SMI_L*  l  = (volatile SMI_L*) REG32(smi_regs, SMIO_L);  
     volatile SMI_A*  a  = (volatile SMI_A*) REG32(smi_regs, SMIO_A);  
-    volatile SMI_D*  d  = (volatile SMI_D*) REG32(smi_regs, SMIO_D);  
     volatile SMI_DC* dc = (volatile SMI_DC*) REG32(smi_regs, SMIO_DC);
 
-    volatile DMA_CS* dma_cs = (volatile DMA_CS*) (REG32(dma_regs, DMAO_CS) + DMA_CHANNEL_0);
-    volatile DMA_DEBUG* dma_debug = (volatile DMA_DEBUG*) (REG32(dma_regs, DMAO_DEBUG) + DMA_CHANNEL_0);
-    volatile uint32_t* dma_dest_addr = (REG32(dma_regs, DMA0_DEST_AD) + DMA_CHANNEL_0);
     
     cs->value = 0;
     cs->fields.clear = 1;
@@ -251,11 +242,7 @@ void smi_start(SMI_CXT* cxt)
 int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 {
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
-    volatile SMI_A*  a  = (volatile SMI_A*)  REG32((*cxt->smi_regs), SMIO_A);
-
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     if(ret_data == NULL) return -EINVAL;
 
@@ -288,10 +275,6 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 
         spin++;
     }
-
-    //printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
-    //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
-
 
     if(cs->fields.rxd)
     {
@@ -360,7 +343,6 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
 
-    uint32_t raw_data[1];
 
     cs->value = 0;
     cs->fields.clear = 1;
@@ -382,14 +364,11 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     
     int count = smi_read_await_direct(cxt, ret_data, addr, 1, 0);
 
-    //smi_unpack(cxt, raw_data, ret_data, count);
-
-    return 1;
+    return count;
 }
 
 int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment)
 {
-    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
     volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
@@ -419,9 +398,6 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
-
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
@@ -443,15 +419,16 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
     uint32_t* raw_data = cxt->raw_buffer.buf;
 
-    a->fields.device = cxt->rw_config->device_num;
+    a->fields.device = cxt->rw_config->read_device_num;
     /*
     This isn't really the read functions concern? It should just be selecting the device and then the config is seperate
-    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR(cxt->rw_config->device_num));
-    volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW(cxt->rw_config->device_num));
+    
+    */
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR(cxt->rw_config->read_device_num));
+    volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW(cxt->rw_config->write_device_num));
     dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
     dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
     dsw->fields.wswap = cxt->rw_config->wconfig->wswap;
-    */
 
     cs->fields.aferr = 0;
     cs->fields.seterr = 1;
@@ -485,9 +462,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
     if(data == NULL || cxt == NULL) return -1;
 
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
-    volatile SMI_A*  a  = (volatile SMI_A*)  REG32((*cxt->smi_regs), SMIO_A);
     volatile SMI_D*  d  = (volatile SMI_D*)  REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
     int spin = 0;
@@ -636,11 +611,8 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
-    //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
     
     cs->fields.aferr = 0;
     cs->fields.seterr = 1;
@@ -669,11 +641,7 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
 int smi_dma_write_await(SMI_CXT* cxt, int channel)
 {
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
-    volatile SMI_DC* dc = (volatile SMI_DC*) REG32((*cxt->smi_regs), SMIO_DC);
     
-    uintptr_t offset = DMA_CS_OFFSET(channel);
-    volatile DMA_CS* dcs = (volatile DMA_CS*) REG32((*cxt->dma_regs), offset);
-
     int spin = 0;
 
     smi_timeout_ns deadline;
@@ -709,7 +677,6 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
     volatile SMI_DC* dc = (volatile SMI_DC*) REG32((*cxt->smi_regs), SMIO_DC);
 
     MEM_MAP smi_regs = *(cxt->smi_regs);

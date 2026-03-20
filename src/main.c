@@ -37,15 +37,15 @@ int main()
     wconfig.wpace = 2;
     wconfig.wsetup = 2;
 
-
     smi_init_cxt_map(&cxt, &smi_regs, &clk_regs, &gpio_regs, &dma_regs);
-    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig, SMI_DEVICE2);
-    
+    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig, SMI_DEVICE1, SMI_DEVICE1);
+    init_smi_clk(clk_regs, smi_regs, 2);
+    smi_sync_context_device(&cxt);
     smi_init_udmabuf(&cxt, &dma_buffer);
-    LOG("This is a test log message");
-    volatile uintptr_t* dma_cs = DMA_N_REG(dma_regs.virt, 0);
 
     /*
+    volatile uintptr_t* dma_cs = DMA_N_REG(dma_regs.virt, 0);
+
     DMA_CB* cb    = (DMA_CB*) dma_buffer.virt;
 
     memset(cb, 0, sizeof(DMA_CB));
@@ -103,7 +103,6 @@ int main()
     smi_cs->value = 0;
 
     //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr0, smi_dsw0, 30, 63, 127, 63);
-    init_smi_clk(smi_cs, clk_regs, smi_regs, 2);
     //sleep(1);
     //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr1, smi_dsw1, 8, 2, 2, 2);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
@@ -148,7 +147,22 @@ int main()
     //printf("Data read: %d\n", read);
 
 
-    megbyte_load_block_test(&cxt);    
+    megbyte_load_block_test(&cxt);
+
+    cxt.rw_config->rconfig[1].rhold = 8;
+    cxt.rw_config->rconfig[1].rpace = 8;
+    cxt.rw_config->rconfig[1].rsetup = 8;
+    cxt.rw_config->read_device_num = 1;
+
+    smi_sync_context_device(&cxt);
+
+    megbyte_load_block_test(&cxt);
+
+    cxt.rw_config->read_device_num = 0;
+
+    smi_sync_context_device(&cxt);
+
+    megbyte_load_block_test(&cxt);
 
     smi_unmap_cxt(&cxt);
     smi_unmap_udmabuf(&cxt);

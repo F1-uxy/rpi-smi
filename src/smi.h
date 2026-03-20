@@ -300,8 +300,8 @@ typedef struct
     uint8_t read_device_num;
     
     SMI_CLK* clk;
-    SMI_READ* rconfig;
-    SMI_WRITE* wconfig;
+    SMI_READ rconfig[4];
+    SMI_WRITE wconfig[4];
 } SMI_RW;
 
 /* SMI DMA Config */
@@ -353,17 +353,19 @@ typedef struct {
     MEM_MAP* clk_regs;
     MEM_MAP* dma_buffer;
 
-
     SMI_RW* rw_config;
 
 } SMI_CXT;
 
 /* --- SMI Setup Helpers --- */
 void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs);
-void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig, int device);
+void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig, int read_device, int write_device);
+void smi_sync_context_device(SMI_CXT* cxt);
+void smi_configure_read_device(SMI_CXT* cxt, uint8_t n);
+void smi_configure_write_device(SMI_CXT* cxt, uint8_t n);
 int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer);
 
-void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, int ns);
+void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns);
 void smi_8b_init(MEM_MAP gpio_map);
 void smi_gpio_init(MEM_MAP gpio_map);
 
