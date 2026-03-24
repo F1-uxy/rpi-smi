@@ -15,8 +15,6 @@
 #define PROG_WRITE_TIMEOUT_S 50
 #define DMA_WRITE_TIMEOUT_S 2
 
-
-
 /* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
 #define SMIO_CS      0x00                        /* Control & status         */
@@ -53,9 +51,7 @@
 #define SMI_DEVICE3 2
 #define SMI_DEVICE4 3
 
-
-
-
+#define SMI_DMA_L(l) (l*4)
 #define SMI_DIV(count, ratio) ((float)count/(float)ratio + ((int)count % (int)ratio != 0));
 
 typedef struct {
@@ -389,7 +385,7 @@ int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len
 /* Programmed Write */
 int smi_programmed_write(SMI_CXT* cxt, uint32_t data, uint8_t addr);
 int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
-int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr);
+int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int channel);
 
 
 /* Direct Read */
@@ -399,7 +395,7 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
 /* Programmed Read */
 int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr);
 int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len);
-// int smi_programmed_read_dma(SMI_CXT* cxt);
+int smi_programmed_read_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int channel);
 
 
 /* Setup Interfaces */
@@ -409,10 +405,11 @@ int smi_gpio_config(SMI_CXT* cxt);
 
 /* --- Workers --- */
 void smi_start(SMI_CXT* cxt);
-int smi_await(SMI_CXT* cxt, uint32_t* ret_data, int len);
 int smi_write_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment);
+int smi_read_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment);
 int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
-int smi_dma_write_await(SMI_CXT* cxt, int channel);
+int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len);
+int smi_dma_await(SMI_CXT* cxt);
 
 /* --- Bit Unpackers --- */
 void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);

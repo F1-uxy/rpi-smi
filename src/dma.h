@@ -170,7 +170,7 @@ typedef union
 
 
 void* map_dma_buffer(size_t buf_size);
-int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev, uint8_t channel, DMA_CB* cb);
+int start_dma(volatile void* dma_regs, uintptr_t cb, uint8_t channel, int fd_sync_dev, int fd_sync_cpu);
 size_t dma_buffer_init(MEM_MAP* buff, int check, int clear);
 
 int check_buf(unsigned char* buf, unsigned int size);

@@ -2,7 +2,7 @@
 #define CLK_H
 
 
-#if PHYS_REG_BASE == PI_23_REG_BASE
+#if PHYS_REG_BASE == 0x3F000000u
     #define CLK_BASE PHYS_REG_BASE + 0x101000
 #endif
 
