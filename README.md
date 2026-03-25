@@ -9,6 +9,7 @@ The project aims to create tools and document information regarding the Secondar
     <li> Finish full documentation - Debug status bits and their swapped nature
     <li> Move all register interations to either bitfields or shifts and not a mix of both
     <li> Clean up smi_await hotpaths and test
-    <li> Add proper GPIO helper functionality
+    <li> Add proper GPIO helper functionality - SMI gpio alt modes enables etc...
     <li> Test multiple DSx devices
+    <li> Add proper return error codes for config functions
 </ul>
