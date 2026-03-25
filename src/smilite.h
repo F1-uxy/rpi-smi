@@ -34,8 +34,10 @@
 #include <stdbool.h>
 
 /* Physical Register Base */
-/* This must be changed to match you system. This is for RPI3 */
-#define PHYS_REG_BASE 0x3F000000u
+/* This must be changed to match you system */
+#ifndef PHYS_REG_BASE
+    #error "Must define PHYS_REG_BASE for current system"
+#endif
 
 /* Timeout */
 #define DIRECT_READ_TIMEOUT_S 2
