@@ -88,6 +88,8 @@ On the reverse, when we read:
 ```
 write(fd_sync_cpu, "1", 1);
 ```
+#### SMI with DMA via u-dma-buf:
+The current limit of a single buffer seems to be 1024 bytes. Going outside of that removed the coherancy
 
 ### Useful links:
 <ul>

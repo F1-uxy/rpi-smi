@@ -11,7 +11,7 @@
 
 void sram_helloworld(SMI_CXT* cxt)
 {
-    cxt->rw_config->rconfig->rwidth = SMI_18_BITS;
+    cxt->rw_config->rconfig->rwidth = SMI_8_BITS;
     cxt->rw_config->wconfig->wformat = SMI_RGB565;
     cxt->rw_config->wconfig->wswap = 0;
     cxt->pxldata = 1;
@@ -20,8 +20,8 @@ void sram_helloworld(SMI_CXT* cxt)
     cxt->intr = 0;
     cxt->intt = 0;
 
-    uint32_t data32[] = {'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '!', '\0'};
-    //uint32_t data32[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, '\0'};
+    //uint32_t data32[] = {'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '!', '\0'};
+    uint32_t data32[] = {0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, '\0'};
     //uint32_t clearData[] = {'\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'};
     
     printf("Writing\n");
@@ -29,12 +29,12 @@ void sram_helloworld(SMI_CXT* cxt)
     //smi_programmed_write_arr(cxt, data32, 0, 12);
     sleep(0);
     printf("Reading\n");
-    int len = 13;
+    int len = 12;
     uint32_t ret[len];
 
-    //int len_read = smi_direct_read_arr(cxt, ret, 0, 12, SMI_ADDR_INC);
+    int len_read = smi_direct_read_arr(cxt, ret, 0, len, SMI_ADDR_INC);
     
-    int len_read = smi_programmed_read_arr(cxt, ret, 1, len);
+    //int len_read = smi_programmed_read_arr(cxt, ret, 1, len);
 
     if(len_read < 0)
     {
