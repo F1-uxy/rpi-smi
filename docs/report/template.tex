@@ -131,9 +131,10 @@ This paper presents the design, implementation and benchmarking of the Secondary
 \subsection{Parallel Interfaces}
 The terms parallel and serial, when used to describe an interface, refers to the number of data lines used for communication. A parallel bus transmits multiple bits simultaneously across several lines whereas, a serial bus transmits data over a single line sequentially. The popularity of parallel interfaces was driven largely by the weak compute power of the era, with data rates limited to megatransfers per second, widening the data bus was the only way to increase throughput. These interfaces were widely used for storage devices, PATA (IDE), and external printers via IEEE 1284 (often referred to as \textit{Centronics} port).
 
-Over time, advances in silicon technology and signal integrity have allowed serial interfaces, such as USB and SATA, to achieve higher data rates. Serial transmission offers clear advantages across the system, from silicon to software. Modern implementations support multi gigatransfer per second data rates while minimising board area and lowers the risk of manufacturing defects. As a result, many parallel interfaces have been gradually deprecated, leaving legacy systems dependant of aging hardware or ad hoc solutions to maintain compatibility with modern storage and peripheral devices.
+Serial transmission offers clear advantages across the system, from silicon to software, due to advances in silicon technology and signal integrity have allowed serial interfaces, such as USB and SATA, to achieve higher data rates. Modern implementations support multi gigatransfer per second data rates while minimising board area and lowers the risk of manufacturing defects. As a result, many parallel interfaces have been gradually deprecated, leaving legacy systems dependant on aging hardware or ad hoc solutions to maintain compatibility with modern storage and peripheral devices.
 
 \subsection{Raspberry Pi Secondary Memory Interface (SMI)}
+
 
 \bibliography{reportbib}
 

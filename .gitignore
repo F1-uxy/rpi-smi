@@ -14,7 +14,8 @@ smi-irq/Module.symvers
 smi-irq/*.cmd
 smi-irq/smi_probe.c
 
-sram_gpio/
+##### Experimental GPIO version ####
+sram-gpio/*
 
 ##### Latex Jargon #####
 
