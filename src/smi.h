@@ -15,14 +15,14 @@
 #define PROG_WRITE_TIMEOUT_S 50
 #define DMA_WRITE_TIMEOUT_S 2
 
-
-
 /* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
 #define SMIO_CS      0x00                        /* Control & status         */
 #define SMIO_L       0x04                        /* Transfer length          */
 #define SMIO_A       0x08                        /* Address                  */
 #define SMIO_D       0x0c                        /* Data                     */
+#define SMIO_DSR(dev) (0x10 + ((dev) * 0x08))    /* Device offset selector   */
+#define SMIO_DSW(dev) (SMIO_DSR(dev) + 4)        /*                          */
 #define SMIO_DSR0    0x10                        /* Read settings device 0   */
 #define SMIO_DSW0    0x14                        /* Write settings device 0  */
 #define SMIO_DSR1    0x18                        /* Read settings device 1   */
@@ -46,6 +46,12 @@
 #define SMI_RGB565 0
 #define SMI_XRGB 1
 
+#define SMI_DEVICE1 0
+#define SMI_DEVICE2 1
+#define SMI_DEVICE3 2
+#define SMI_DEVICE4 3
+
+#define SMI_DMA_L(l) (l*4)
 #define SMI_DIV(count, ratio) ((float)count/(float)ratio + ((int)count % (int)ratio != 0));
 
 typedef struct {
@@ -256,11 +262,15 @@ typedef struct
 typedef struct
 {
     uint8_t rwidth;
-    uint8_t fsetup;
-    uint8_t rpaceall;
+    uint8_t rhold;
+    uint8_t rpace;
+    uint8_t rstrobe;
+    uint8_t rsetup;
 
-    bool rexreq;
-    bool mode_80;
+    bool mode68; /* 0 = System-80 ; 1 = System-68*/
+    bool fsetup;
+    bool rpaceall;
+    bool rdreq;
 } SMI_READ;
 
 
@@ -268,20 +278,26 @@ typedef struct
 typedef struct
 {
     uint8_t wwidth;
-    uint8_t wformat;
-    uint8_t wswap;
-    uint8_t wpaceall;
-    bool wexreg;
+    uint8_t wsetup;
+    uint8_t whold;
+    uint8_t wpace;
+    uint8_t wstrobe;
+
+    bool wformat;
+    bool wswap;
+    bool wpaceall;
+    bool wdreq;
 } SMI_WRITE;
 
 /* SMI Read Write & Clock Context */
 typedef struct
 {
-    uint8_t device_num;
+    uint8_t write_device_num;
+    uint8_t read_device_num;
     
     SMI_CLK* clk;
-    SMI_READ* rconfig;
-    SMI_WRITE* wconfig;
+    SMI_READ rconfig[4];
+    SMI_WRITE wconfig[4];
 } SMI_RW;
 
 /* SMI DMA Config */
@@ -298,6 +314,11 @@ typedef struct
 
 
 /* SMI Context */
+
+typedef struct {
+    uint32_t* buf;
+    size_t size;
+} SMI_RAW_BUF;
 
 typedef struct {
     uint8_t interface_width;
@@ -318,6 +339,8 @@ typedef struct {
     int fd_sync_dev;
     int fd_sync_cpu;
 
+    SMI_RAW_BUF raw_buffer;
+
     SMI_DMA dma_config;
 
     MEM_MAP* smi_regs;
@@ -326,17 +349,19 @@ typedef struct {
     MEM_MAP* clk_regs;
     MEM_MAP* dma_buffer;
 
-
     SMI_RW* rw_config;
 
 } SMI_CXT;
 
 /* --- SMI Setup Helpers --- */
 void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs);
-void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig);
+void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig, int read_device, int write_device);
+void smi_sync_context_device(SMI_CXT* cxt);
+void smi_configure_read_device(SMI_CXT* cxt, uint8_t n);
+void smi_configure_write_device(SMI_CXT* cxt, uint8_t n);
 int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer);
 
-void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold);
+void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns);
 void smi_8b_init(MEM_MAP gpio_map);
 void smi_gpio_init(MEM_MAP gpio_map);
 
@@ -360,7 +385,7 @@ int smi_direct_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, uint8_t len
 /* Programmed Write */
 int smi_programmed_write(SMI_CXT* cxt, uint32_t data, uint8_t addr);
 int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
-int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr);
+int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int channel);
 
 
 /* Direct Read */
@@ -370,7 +395,7 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
 /* Programmed Read */
 int smi_programmed_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr);
 int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len);
-// int smi_programmed_read_dma(SMI_CXT* cxt);
+int smi_programmed_read_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int channel);
 
 
 /* Setup Interfaces */
@@ -380,10 +405,11 @@ int smi_gpio_config(SMI_CXT* cxt);
 
 /* --- Workers --- */
 void smi_start(SMI_CXT* cxt);
-int smi_await(SMI_CXT* cxt, uint32_t* ret_data, int len);
 int smi_write_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment);
+int smi_read_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment);
 int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len);
-int smi_dma_write_await(SMI_CXT* cxt, int channel);
+int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len);
+int smi_dma_await(SMI_CXT* cxt);
 
 /* --- Bit Unpackers --- */
 void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);

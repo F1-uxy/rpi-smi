@@ -12,6 +12,7 @@
 #include "smi.h"
 #include "clk.h"
 #include "sram.h"
+#include "errors.h"
 
 
 int main()
@@ -25,17 +26,35 @@ int main()
     SMI_WRITE wconfig;
 
     rconfig.rwidth = SMI_8_BITS;
+    rconfig.fsetup = 0;
+    rconfig.rhold = 2;
+    rconfig.rpace = 2;
+    rconfig.rsetup = 2;
+    rconfig.mode68 = 1;
+    rconfig.rpaceall = 1;
+    rconfig.rdreq = 0;
+    rconfig.rstrobe = 2;
+
+    wconfig.wwidth = SMI_8_BITS;
     wconfig.wformat = SMI_RGB565;
+    wconfig.whold = 2;
+    wconfig.wpace = 2;
+    wconfig.wsetup = 2;
+    wconfig.wstrobe = 2;
+    wconfig.wpaceall = 0;
 
     smi_init_cxt_map(&cxt, &smi_regs, &clk_regs, &gpio_regs, &dma_regs);
-    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig);
-    
+    smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig, SMI_DEVICE1, SMI_DEVICE1);
+    init_smi_clk(clk_regs, smi_regs, 2);
+
+    smi_sync_context_device(&cxt);
     smi_init_udmabuf(&cxt, &dma_buffer);
-    
-    
+    smi_8b_init(gpio_regs);
+
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr0, smi_dsw0, 30, 63, 127, 63);
+    /*
     volatile uintptr_t* dma_cs = DMA_N_REG(dma_regs.virt, 0);
 
-    /*
     DMA_CB* cb    = (DMA_CB*) dma_buffer.virt;
 
     memset(cb, 0, sizeof(DMA_CB));
@@ -69,32 +88,67 @@ int main()
     printf("SMI regs virt: %p\n", smi_regs.virt);
     printf("SMI regs phys: %p\n", smi_regs.phys);
     
-    */
     
-    DMA_CB* cb = (DMA_CB*)dma_buffer.virt;
-    memset(cb, 0, sizeof(DMA_CB));
-    
-    char* msg = (char*) (cb + 1);
-    strcpy(msg, "Test");
-    
-    /*
-    uint8_t* msg = (uint8_t*) (cb + 1);
-    *msg = 0xA;
-    */
     uintptr_t src_offset = (uintptr_t) msg - (uintptr_t)dma_buffer.virt;
     cb->src_addr = (uint32_t)((uintptr_t)dma_buffer.bus + src_offset);
-    cb->tfr_len = strlen(msg);
+    */
+    memset(dma_buffer.virt, 0, 1024 * sizeof(uint32_t));
+    smi_dma_setup(smi_regs);
+    DMA_CS* d_cs = (DMA_CS*) REG32(dma_regs, DMAO_CS);
+    DMA_DEBUG* d_debug = (DMA_DEBUG*) REG32(dma_regs, DMAO_DEBUG);
+    d_cs->fields.reset = 1;
+    DMA_CB* cb = (DMA_CB*)dma_buffer.virt;
+    memset(cb, 0, sizeof(DMA_CB));
+
+    int len = 16;
+    uint32_t* rxdata = (uint32_t*)(cb+2);
+    uint32_t* txdata = (uint32_t*) (cb + 1);
+    txdata[0] = 0xFFFF;
+    txdata[1] = 0x0000;
+    txdata[2] = 0xFFFF;
+    txdata[3] = 0x0000;
+    uint32_t ret_data[len];
+
+    cb->src_addr = MEM_BUS_ADDR((&dma_buffer), txdata);
+    cb->dest_addr = MEM_BUS_ADDR((&dma_buffer), rxdata);
+
+    cb->ti = 0;
+    cxt.rw_config->read_device_num = SMI_DEVICE1;
+    cxt.rw_config->rconfig->rwidth = SMI_18_BITS;
+    cxt.rw_config->wconfig->wformat = SMI_RGB565;
+    cxt.dma_config.reqr = 4;
+    
+    cxt.rw_config->write_device_num = SMI_DEVICE1;
+    cxt.rw_config->wconfig->wwidth = SMI_8_BITS;
+    cxt.dma_config.reqw = 1; 
+    cxt.dma_config.panicw = 1;
+
+    cxt.pxldata = 0;
+    smi_sync_context_device(&cxt);
+
+    smi_programmed_write_dma(&cxt, cb, 0, len, 0);
+    smi_programmed_read_dma(&cxt, cb, 0, len, 0);
+    //smi_programmed_read_arr(&cxt, ret_data, 0, len);
+
+    printf("DMA CS: state = %d\n", d_debug->fields.dma_state);
+    sync_for_cpu(cxt.fd_sync_cpu);
+    int count = 0;
+    for(int i = 0; i < len; i++)
+    {
+        if(rxdata[i] == 32) count++;
+        printf("Result: %d \n", rxdata[i]);
+    }
+    printf("Total count: %d\n", count);
+    //printf("Result: %d ; %d ; %d ; %d\n", rxdata[0], rxdata[1], rxdata[2], rxdata[3]);
 
     volatile SMI_CS* smi_cs  = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);
-    volatile SMI_DSR* smi_dsr = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
-    volatile SMI_DSW* smi_dsw = (volatile SMI_DSW*) REG32(smi_regs, SMIO_DSW0);
+    volatile SMI_DSR* smi_dsr0 = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
+    volatile SMI_DSW* smi_dsw0 = (volatile SMI_DSW*) REG32(smi_regs, SMIO_DSW0);
     
 
     smi_cs->value = 0;
 
-    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 30, 63, 127, 63);
-    init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 2, 2, 2, 2);
-    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr, smi_dsw, 10, 2, 6, 2);
+    //init_smi_clk(smi_cs, clk_regs, smi_regs, smi_dsr1, smi_dsw1, 8, 2, 2, 2);
     uint32_t ctl = *REG32(clk_regs, CLK_SMI_CTL);
     uint32_t div = *REG32(clk_regs, CLK_SMI_DIV);
 
@@ -102,8 +156,6 @@ int main()
     printf("SMI_CLK_DIV = 0x%08x\n", div);
 
     
-    smi_8b_init(gpio_regs);
-    smi_dma_setup(smi_regs);
     //smi_8b_write(smi_regs, 0x0, 1);
     //smi_dma_write(smi_regs, dma_regs, &dma_buffer, cxt.fd_sync_dev, cb, DMA_CHANNEL_0);
     //sleep(1);
@@ -135,9 +187,6 @@ int main()
     //int read = testbench_write(&cxt, 1000000);
     //int read = testbench_read(&cxt, 1000000);
     //printf("Data read: %d\n", read);
-
-
-    megbyte_load_block_test(&cxt);    
 
     smi_unmap_cxt(&cxt);
     smi_unmap_udmabuf(&cxt);

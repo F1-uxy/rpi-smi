@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include "smi.h"
 #include "clk.h"
@@ -28,6 +29,16 @@ void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MA
     /* Map CLK regs */
     map_segment(clk_regs, CLK_BASE, PAGE_SIZE);
 
+    /* Allocate raw buffer */
+    cxt->raw_buffer.buf = malloc(1024 * sizeof(uint32_t));
+    cxt->raw_buffer.size = (1024);
+
+    if(!cxt->raw_buffer.buf)
+    {
+        ERROR("Raw buffer allocation failed");
+        exit(1);
+    }
+
     cxt->smi_regs  = smi_regs;
     cxt->clk_regs  = clk_regs;
     cxt->gpio_regs = gpio_regs;
@@ -40,12 +51,21 @@ void smi_unmap_cxt(SMI_CXT* cxt)
     unmap_segment(cxt->dma_regs, NADJ_CHANNELS * PAGE_SIZE);
     unmap_segment(cxt->smi_regs, PAGE_SIZE);
     unmap_segment(cxt->clk_regs, PAGE_SIZE);
+
+    if(cxt->raw_buffer.buf != NULL)
+    {
+        free(cxt->raw_buffer.buf);
+    }
+
+    cxt->raw_buffer.size = 0;
 }
 
-void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig)
+void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig, int read_device, int write_device)
 {
-    rw->rconfig = rconfig;
-    rw->wconfig = wconfig;
+    rw->read_device_num = read_device;
+    rw->write_device_num = write_device;
+    rw->rconfig[write_device] = *rconfig;
+    rw->wconfig[write_device] = *wconfig;
     rw->clk = clk;
     cxt->rw_config = rw;
 }
@@ -69,6 +89,8 @@ int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer)
     cxt->fd_sync_dev = fd_sync_dev;
     cxt->fd_sync_cpu = fd_sync_cpu;
     cxt->dma_buffer = dma_buffer;
+
+    return 0;
 }
 
 void smi_unmap_udmabuf(SMI_CXT* cxt)
@@ -79,7 +101,7 @@ void smi_unmap_udmabuf(SMI_CXT* cxt)
 }
 
 /* ns: Clock period; even number 2 -> 30*/
-void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volatile SMI_DSR* dsr, volatile SMI_DSW* dsw, int ns, int setup, int strobe, int hold)
+void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns)
 {    
     int divi = ns/2; /* Only valid on RPI 3 */
 
@@ -96,16 +118,54 @@ void init_smi_clk(volatile SMI_CS* cs, MEM_MAP clk_regs, MEM_MAP smi_regs, volat
         while ((*REG32(clk_regs, CLK_SMI_CTL) & (1 << 7)) == 0) ;
         sleep(0);
     }
+}
 
-    if (cs->fields.seterr)
+void smi_sync_context_device(SMI_CXT* cxt)
+{
+    smi_configure_write_device(cxt, cxt->rw_config->write_device_num);
+    smi_configure_read_device(cxt, cxt->rw_config->read_device_num);
+}
+
+void smi_configure_read_device(SMI_CXT* cxt, uint8_t n)
+{
+    if(n > 3)
     {
-        perror("SMI SETERR true\n");
-        cs->fields.seterr = 1;
+        ERROR("Device number out of range");
+        return;
     }
+
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR(n));
     
-    dsr->fields.rsetup = dsw->fields.wsetup = setup; 
-    dsr->fields.rstrobe = dsw->fields.wstrobe = strobe;
-    dsr->fields.rhold = dsw->fields.whold = hold;
+    dsr->fields.rstrobe = cxt->rw_config->rconfig[n].rstrobe;
+    dsr->fields.rdreq = cxt->rw_config->rconfig[n].rdreq;
+    dsr->fields.rpace = cxt->rw_config->rconfig[n].rpace;
+    dsr->fields.rpaceall = cxt->rw_config->rconfig[n].rpaceall;
+    dsr->fields.rhold = cxt->rw_config->rconfig[n].rhold;
+    dsr->fields.fsetup = cxt->rw_config->rconfig[n].fsetup;
+    dsr->fields.mode68 = cxt->rw_config->rconfig[n].mode68;
+    dsr->fields.rsetup = cxt->rw_config->rconfig[n].rsetup;
+    dsr->fields.rwidth = cxt->rw_config->rconfig[n].rwidth;
+}
+
+void smi_configure_write_device(SMI_CXT* cxt, uint8_t n)
+{
+    if(n > 3)
+    {
+        ERROR("Device number out of range");
+        return;
+    }
+
+    volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW(n));
+
+    dsw->fields.wsetup = cxt->rw_config->wconfig[n].wformat;
+    dsw->fields.wwidth = cxt->rw_config->wconfig[n].wwidth;
+    dsw->fields.whold = cxt->rw_config->wconfig[n].whold;
+    dsw->fields.wpace = cxt->rw_config->wconfig[n].wpace;
+    dsw->fields.wpaceall = cxt->rw_config->wconfig[n].wpaceall;
+    dsw->fields.wstrobe = cxt->rw_config->wconfig[n].wstrobe;
+    dsw->fields.wdreq = cxt->rw_config->wconfig[n].wdreq;
+    dsw->fields.wswap = cxt->rw_config->wconfig[n].wswap;
+    dsw->fields.wformat = cxt->rw_config->wconfig[n].wformat;
 }
 
 void smi_gpio_init(MEM_MAP gpio_map)
@@ -140,42 +200,6 @@ void smi_8b_init(MEM_MAP gpio_map)
     }
 }
 
-void smi_dma_write(MEM_MAP smi_regs, MEM_MAP dma_regs, MEM_MAP* dma_buffer, int fd_sync_dev, DMA_CB* cb, uint8_t channel)
-{
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);
-    volatile SMI_L*  l  = (volatile SMI_L*) REG32(smi_regs, SMIO_L);  
-    volatile SMI_A*  a  = (volatile SMI_A*) REG32(smi_regs, SMIO_A);  
-    volatile SMI_D*  d  = (volatile SMI_D*) REG32(smi_regs, SMIO_D);  
-    volatile SMI_DC* dc = (volatile SMI_DC*) REG32(smi_regs, SMIO_DC);
-
-    volatile DMA_CS* dma_cs = (volatile DMA_CS*) (REG32(dma_regs, DMAO_CS) + DMA_CHANNEL_0);
-    volatile DMA_DEBUG* dma_debug = (volatile DMA_DEBUG*) (REG32(dma_regs, DMAO_DEBUG) + DMA_CHANNEL_0);
-    volatile uint32_t* dma_dest_addr = (REG32(dma_regs, DMA0_DEST_AD) + DMA_CHANNEL_0);
-    
-    cs->value = 0;
-    cs->fields.clear = 1;
-    while (cs->fields.clear);
-    a->fields.addr = 0;
-    l->value = cb->tfr_len;
-    
-    dc->fields.dmaen = 1;
-    //dc->fields.dmap = 1; /* Top 2 bits are used for external data requests */
-
-    cs->fields.pxldat = 1;
-    cs->fields.enable = 1;
-    cs->fields.write = 1;
-    cs->fields.intd = 1;
-    cs->fields.intt = 0;
-    cs->fields.intr = 0;
-
-    cb->dest_addr = REG32_BUS(smi_regs, SMIO_D);
-    cb->ti = DMA_DEST_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_SRCE_INC;
-    
-    cs->fields.start = 1;
-    start_dma(dma_buffer, dma_regs, fd_sync_dev, 0, cb);
-
-    //while(!cs->fields.done);
-}
 
 void smi_start(SMI_CXT* cxt)
 {
@@ -186,11 +210,7 @@ void smi_start(SMI_CXT* cxt)
 int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 {
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
-    volatile SMI_A*  a  = (volatile SMI_A*)  REG32((*cxt->smi_regs), SMIO_A);
-
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     if(ret_data == NULL) return -EINVAL;
 
@@ -223,10 +243,6 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
 
         spin++;
     }
-
-    //printf("FCNT %d ; FLVL %d\n", (fd->fields.fcnt), (fd->fields.flvl));
-    //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
-
 
     if(cs->fields.rxd)
     {
@@ -295,7 +311,6 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
 
-    uint32_t raw_data[1];
 
     cs->value = 0;
     cs->fields.clear = 1;
@@ -317,14 +332,11 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     
     int count = smi_read_await_direct(cxt, ret_data, addr, 1, 0);
 
-    //smi_unpack(cxt, raw_data, ret_data, count);
-
-    return 1;
+    return count;
 }
 
 int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len, int increment)
 {
-    volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
     volatile SMI_DCS* dcs = (volatile SMI_DCS*) REG32((*cxt->smi_regs), SMIO_DCS);
     volatile SMI_DD*  dd  = (volatile SMI_DD*)  REG32((*cxt->smi_regs), SMIO_DD);
@@ -354,18 +366,33 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR0);
-    volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW0);
-
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
     int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
-    uint32_t raw_data[word_reads];
 
+    if(word_reads > cxt->raw_buffer.size)
+    {
+        LOG("Previous buffer too small, resizing to fit");
+        
+        uint32_t* new_buf = realloc(cxt->raw_buffer.buf, word_reads * sizeof(uint32_t));
+        if(!new_buf)
+        {
+            ERROR("Reallocation of raw buffer failed");
+            return -1;
+        }
+        cxt->raw_buffer.buf = new_buf;
+        cxt->raw_buffer.size = word_reads;
+    }
 
+    uint32_t* raw_data = cxt->raw_buffer.buf;
+
+    a->fields.device = cxt->rw_config->read_device_num;
+    /*
+    This isn't really the read functions concern? It should just be selecting the device and then the config is seperate
+    */
+    volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR(cxt->rw_config->read_device_num));
+    volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW(cxt->rw_config->write_device_num));
     dsr->fields.rwidth = cxt->rw_config->rconfig->rwidth;
     dsw->fields.wformat = cxt->rw_config->wconfig->wformat;
     dsw->fields.wswap = cxt->rw_config->wconfig->wswap;
@@ -374,7 +401,6 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     cs->fields.seterr = 1;
 
     cs->fields.pxldat = cxt->pxldata;
-
     cs->fields.enable = 1;
     cs->fields.write = 0;
     cs->fields.clear = 1;
@@ -403,9 +429,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
     if(data == NULL || cxt == NULL) return -1;
 
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
-    volatile SMI_A*  a  = (volatile SMI_A*)  REG32((*cxt->smi_regs), SMIO_A);
     volatile SMI_D*  d  = (volatile SMI_D*)  REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
     int spin = 0;
@@ -554,11 +578,8 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
-    volatile SMI_FD* fd = (volatile SMI_FD*) REG32((*cxt->smi_regs), SMIO_FD);
 
     int count = 0;
-    //printf("RXD %d ; TXE %d ; TXD %d ; RXR %d ; TXW %d\n", (cs->fields.rxd > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.rxr > 0), (cs->fields.txw > 0));
     
     cs->fields.aferr = 0;
     cs->fields.seterr = 1;
@@ -584,41 +605,34 @@ int smi_programmed_write_arr(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len
 
 }
 
-int smi_dma_write_await(SMI_CXT* cxt, int channel)
+int smi_dma_await(SMI_CXT* cxt)
 {
-    volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
-    volatile SMI_DC* dc = (volatile SMI_DC*) REG32((*cxt->smi_regs), SMIO_DC);
-    
-    uintptr_t offset = DMA_CS_OFFSET(channel);
-    volatile DMA_CS* dcs = (volatile DMA_CS*) REG32((*cxt->dma_regs), offset);
+    volatile DMA_CS* dma_cs = (volatile DMA_CS*)  REG32((*cxt->dma_regs), DMAO_CS);
 
-    int spin = 0;
-
+    long delay = 1000;    
     smi_timeout_ns deadline;
-    deadline = start_timeout(DMA_WRITE_TIMEOUT_S);
+    
+    deadline = start_timeout(PROG_READ_TIMEOUT_S);
 
-    while(!cs->fields.done)
+    while(!dma_cs->fields.end)
     {
-        if(spin > 1024)
+        if(timeout_complete(deadline))
         {
-            if(timeout_complete(deadline))
-            {
-                ERROR("DMA transfer timeout");
-                cs->fields.clear = 1;
-                cs->fields.done = 1;
-                return -ETIMEDOUT;
-            }
-
-            spin = 0;
+            ERROR("DMA transfer timeout");
+            dma_cs->fields.abort = 1;
+            return -ETIMEDOUT;
         }
 
-        spin++;
-    }
+        struct timespec ts = {0, delay};
+        nanosleep(&ts, NULL);
 
-    return 1; /* Should find a way count transfers - FIFO Debug register */
+        if(delay < 100000) delay *= 2;
+    }
+    
+    return 1;
 }
 
-int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
+int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int channel)
 {
     if(cxt == NULL || cb == NULL) return -1;
 
@@ -627,38 +641,83 @@ int smi_programmed_write_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr)
     volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
     volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
     volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
-    volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
     volatile SMI_DC* dc = (volatile SMI_DC*) REG32((*cxt->smi_regs), SMIO_DC);
 
-    MEM_MAP smi_regs = *(cxt->smi_regs);
-    MEM_MAP dma_regs = *(cxt->dma_regs);
+    MEM_MAP* smi_regs = cxt->smi_regs;
+    MEM_MAP* dma_regs = cxt->dma_regs;
     MEM_MAP* dma_buffer = cxt->dma_buffer;
-    int channel = 0;
 
-    cb->dest_addr = REG32_BUS(smi_regs, SMIO_D);
     cb->ti = DMA_DEST_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_SRCE_INC;
+    cb->dest_addr = REG_BUS_ADDR((*smi_regs), SMIO_D);
+    cb->tfr_len = SMI_DMA_L(len);
+
+    cb->next_cb = 0;
+    cb->stride = 0;
 
     cs->fields.clear = 1;
-    a->fields.addr = addr;
-    l->value = cb->tfr_len;
-
-    dc->fields.dmaen = 1;
-    cs->fields.pxldat = 1;
     cs->fields.enable = 1;
+    cs->fields.pxldat = cxt->pxldata;
     cs->fields.write = 1;
 
+    a->fields.addr = addr;
+    l->fields.length = len;
+
+    dc->fields.dmaen = 1;
     dc->fields.panicw = cxt->dma_config.panicw;
     dc->fields.reqw   = cxt->dma_config.reqw;
 
-    dc->fields.panicw = 1;
+    smi_start(cxt);
+    uintptr_t cb_addr = MEM_BUS_ADDR(dma_buffer, cb);
+    start_dma(dma_regs->virt, cb_addr, channel, cxt->fd_sync_dev, cxt->fd_sync_cpu);
+    int err = smi_dma_await(cxt);
+        
+    return err;
+}
 
+int smi_programmed_read_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int channel)
+{
+    if(cxt == NULL || cb == NULL) return -1;
 
-    dc->fields.reqw = 1;
+    if(cxt->smi_regs == NULL) return -1;
 
-    cs->fields.start = 1;
+    volatile SMI_CS* cs = (volatile SMI_CS*) REG32((*cxt->smi_regs), SMIO_CS);    
+    volatile SMI_L*  l = (volatile SMI_L*) REG32((*cxt->smi_regs), SMIO_L);
+    volatile SMI_A*  a = (volatile SMI_A*) REG32((*cxt->smi_regs), SMIO_A);
+    volatile SMI_DC* dc = (volatile SMI_DC*) REG32((*cxt->smi_regs), SMIO_DC);
 
-    start_dma(dma_buffer, dma_regs, cxt->fd_sync_dev, channel, cb);
-    return smi_dma_write_await(cxt, 0);
+    MEM_MAP* smi_regs = cxt->smi_regs;
+    MEM_MAP* dma_regs = cxt->dma_regs;
+    MEM_MAP* dma_buffer = cxt->dma_buffer;
+
+    /* Required DMA CB flags */
+    cb->ti = DMA_SRCE_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_DEST_INC | DMA_WAIT_RSP;
+    cb->src_addr = REG_BUS_ADDR((*smi_regs), SMIO_D);
+    cb->tfr_len = SMI_DMA_L(len);
+
+    cb->next_cb = 0;
+    cb->stride = 0;
+
+    cs->fields.clear = 1;
+    cs->fields.enable = 1;
+
+    cs->fields.pxldat = cxt->pxldata;
+    cs->fields.pvmode = 0;
+    cs->fields.pad = 0;
+    cs->fields.write = 0;
+
+    a->fields.addr = addr;
+    l->fields.length = len;
+
+    dc->fields.dmaen = 1;
+    dc->fields.panicr = cxt->dma_config.panicr;
+    dc->fields.reqr   = cxt->dma_config.reqr;
+
+    uintptr_t cb_addr = MEM_BUS_ADDR(dma_buffer, cb);
+    start_dma(dma_regs->virt, cb_addr, channel, cxt->fd_sync_dev, cxt->fd_sync_cpu);
+    smi_start(cxt);
+    int err = smi_dma_await(cxt);
+    
+    return err;
 }
 
 void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)

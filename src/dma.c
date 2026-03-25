@@ -9,6 +9,8 @@
 
 #include "dma.h"
 #include "gpio.h"
+#include "smi.h"
+#include "errors.h"
 
 void* map_dma_buffer(size_t buf_size)
 {
@@ -38,10 +40,9 @@ void* map_dma_buffer(size_t buf_size)
     return buf;
 }
 
-
-int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev , uint8_t channel, DMA_CB* cb)
+int start_dma(volatile void* dma_regs, uintptr_t cb, uint8_t channel, int fd_sync_dev, int fd_sync_cpu)
 {
-    if(cb == NULL)
+    if(cb == 0)
     {
         perror("ERROR: CB Null Pointer\n");
         return -1;
@@ -54,25 +55,20 @@ int start_dma(MEM_MAP* dma_buffer, MEM_MAP dma_regs, int fd_sync_dev , uint8_t c
     }
 
     #if defined(PI_ARM64)
-        //write(fd_sync_dev, "1", 1);
-        sync_for_cpu(fd_sync_dev);
+        sync_for_cpu(fd_sync_cpu);
     #endif
 
-    uintptr_t offset = DMA_CS_OFFSET(channel);
-    volatile DMA_CS* dma_cs = (volatile DMA_CS*) REG32(dma_regs, offset);
-
-    dma_cs->fields.reset = 1;
+    volatile DMA_CS* dma_cs = (volatile DMA_CS*) ((uintptr_t)dma_regs + DMA_CS_OFFSET(channel));
+    volatile DMA_CONBLK_AD* dma_conblk_ad = (volatile DMA_CONBLK_AD*) ((uintptr_t)dma_regs + DMA_CTRL_BLK(channel));
 
     if (dma_cs->fields.active)
     {
-        perror("ERROR: DMA already active\n");
+        ERROR("DMA already active");
         return -1;
     }
 
-    offset = DMA_CTRL_BLK(channel);
-    volatile DMA_CONBLK_AD* dma_conblk_ad = (volatile DMA_CONBLK_AD*) REG32(dma_regs, offset);
+    dma_conblk_ad->fields.scb_addr = (uint32_t)cb;
 
-    dma_conblk_ad->value = (uintptr_t)dma_buffer->bus; 
     dma_cs->fields.active = 1;
 
     return 0;

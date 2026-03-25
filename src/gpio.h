@@ -1,8 +1,13 @@
 #ifndef GPIO_H
 #define GPIO_H
 
-#define PHYS_REG_BASE   PI_23_REG_BASE
-#define PI_23_REG_BASE  0x3F000000u      /* Pi 3 */
+#if defined(PI3)
+    #define PHYS_REG_BASE 0x3F000000u
+#elif defined(PI4)
+    #define PHYS_REG_BASE 0xFE000000u
+#elif defined(PI5)
+    #error "Pi 5 requires different peripheral mapping"
+#endif
 
 #if defined(__aarch64__)
     #define PI_ARM64
@@ -27,14 +32,12 @@ typedef struct {
 } MEM_MAP;
 
 #define REG32(m, x) ((volatile uint32_t*) ((uintptr_t)(m.virt)+(uintptr_t)(x)))
-#define REG32_BUS(m, x) ((uint32_t)((uintptr_t)(m.bus))  + (uint32_t)(x))
-
-
+#define REG32_BUS(m, x) ((volatile uint32_t*) ((uintptr_t)(m.bus))  + (uint32_t)(x))
 
 /* Get bus address of register */
 #define REG_BUS_ADDR(m, x)  ((uint32_t)(m.bus) + (uint32_t)(x))
 
-/* Convert uncached memory virtual address to bus address */
+/* Convert uncached memory virtual address to bus address - Also downcast to 32 bit for DMA */
 #define MEM_BUS_ADDR(mp, a) ((uint32_t)a-(uint32_t)mp->virt+(uint32_t)mp->bus)
 
 /* Convert bus address to physical address (for mmap) */
