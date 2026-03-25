@@ -43,18 +43,24 @@ The benchmark enviornment:
 [LUT vs Branches](https://specbranch.com/posts/lookup-tables/)
 [Raspberry Pi Memory Heirachy](https://sandsoftwaresound.net/raspberry-pi/raspberry-pi-gen-1/memory-hierarchy/)
 
+A priori
 
 #### Final Report Plan:
 
 ##### Abstract
 
 ##### Introduction
+<ul>
+    <li> The move away from parallel interfaces and the silent deprecation of support for old systems
+    <li> Overview of the project
+    <li> Aims and objectives
+</ul>
 
 ##### Background
 <ul>
     <li> What is the Secondary Memory Interface
     <li> Motivation of the project
-    <li> Current implemenations and limitation
+    <li> Current implemenations (literature review) and limitations
 </ul>
 
 ##### Methodology
@@ -62,12 +68,13 @@ The benchmark enviornment:
     <li> Secondary Memory Interface
     <li> Direct Memory Access
     <li> Kernel modules
-    <li>
+    <li> Shared memory architecture
 </ul>
 
 ##### Implementation
 <ul>
     <li> API design (style and functionality)
+    <li> Corrections of current documentation
 </ul>
 
 ##### Results and Analysis

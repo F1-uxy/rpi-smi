@@ -117,8 +117,23 @@
 
 
 \section{Introduction}
+Modern embedded systems offer versatile platforms for hobbyist and industrial applications with versatile peripheral interfaces and high-speed memory access. Among these platforms, Raspberry Pi established themselves as low-cost single board computer specialists, offering flexibility and accessibility for both research and industrial applications. However, hardware manufacturers moving away from parallel interfaces has silently deprecated support for legacy systems, forcing developers to rely on additional hardware or simulations to maintain compatibility. 
 
-\section{}
+This project focuses on the Secondary Memory Interface (SMI), produced by Broadcom and accessible on Raspberry Pi boards, designed to facilitate high-speed parallel memory access. Despite its unique nature, there is limited documentation and practical guidance on implementing and supporting SMI.~This project's aim is twofold: first, to provide comprehensive documentation and a user-space API for the SMI on Raspberry Pi;~and second, to implement a functional shared memory system that demonstrates efficient data transfer between multiple processes and devices.
+
+By combining thorough documentation and practical implementation, this project contributes both as a future reference for developers and as a practical example for high-speed shared memory usage on Raspberry Pi systems. The resulting implementation provides a platform for creating legacy support for deprecated parallel interfaces, while also encouraging further exploration of shared memory architectures on Raspberry Pi.
+
+% This needs to be reviewed throughout the paper...
+This paper presents the design, implementation and benchmarking of the Secondary Memory Interface on Raspberry Pi boards, highlighting performance differences across configurable modes and devices, in turn identifying best practices for efficient shared memory communication.
+
+\section{Background}
+
+\subsection{Parallel Interfaces}
+The terms parallel and serial, when used to describe an interface, refers to the number of data lines used for communication. A parallel bus transmits multiple bits simultaneously across several lines whereas, a serial bus transmits data over a single line sequentially. The popularity of parallel interfaces was driven largely by the weak compute power of the era, with data rates limited to megatransfers per second, widening the data bus was the only way to increase throughput. These interfaces were widely used for storage devices, PATA (IDE), and external printers via IEEE 1284 (often referred to as \textit{Centronics} port).
+
+Over time, advances in silicon technology and signal integrity have allowed serial interfaces, such as USB and SATA, to achieve higher data rates. Serial transmission offers clear advantages across the system, from silicon to software. Modern implementations support multi gigatransfer per second data rates while minimising board area and lowers the risk of manufacturing defects. As a result, many parallel interfaces have been gradually deprecated, leaving legacy systems dependant of aging hardware or ad hoc solutions to maintain compatibility with modern storage and peripheral devices.
+
+\subsection{Raspberry Pi Secondary Memory Interface (SMI)}
 
 \bibliography{reportbib}
 
