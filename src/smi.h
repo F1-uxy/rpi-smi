@@ -8,6 +8,30 @@
 #include "timeout.h"
 
 /* Timeout */
+/* Hardware latency */
+#ifndef SPIN_HARD_LIMIT
+    #define SPIN_HARD_LIMIT 128
+#endif
+
+/* OS scheduling delay */
+#ifndef SPIN_MALLEABLE_LIMIT
+    #define SPIN_MALLEABLE_LIMIT 512
+#endif
+
+/* Hardware sleep waiting */
+#ifndef SPIN_SOFT_LIMIT
+    #define SPIN_SOFT_LIMIT 2048
+#endif
+
+#if SPIN_HARD_LIMIT >= SPIN_MALLEABLE_LIMIT
+    #error "SPIN_HARD_LIMIT must be less than SPIN_MALLEABLE_LIMIT"
+#endif
+
+#if SPIN_MALLEABLE_LIMIT >= SPIN_SOFT_LIMIT
+    #error "SPIN_MALLEABLE_LIMIT must be less than SPIN_SOFT_LIMIT"
+#endif
+
+
 #define DIRECT_READ_TIMEOUT_S 2
 #define PROG_READ_TIMEOUT_S 50
 

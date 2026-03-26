@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sched.h>
 
 #include "smi.h"
 #include "clk.h"
@@ -229,9 +230,17 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         {
             volatile uint32_t word = d->value;
             ret_data[count++] = word;
+            spin = 0;
+            continue;
         }
 
-        if(spin > 1024)
+        if(spin > SPIN_HARD_LIMIT)
+        {
+            __yield();
+        } else if (spin > SPIN_MALLEABLE_LIMIT)
+        {
+            sched_yield();
+        } else if (spin > SPIN_SOFT_LIMIT)
         {
             if(timeout_complete(deadline))
             {
