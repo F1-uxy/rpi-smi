@@ -19,7 +19,7 @@
 \usepackage{subfloat}
 \usepackage{color}
 \usepackage{pdfpages}
-
+\usepackage{url}
 %\setkeys{Gin}{draft}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -82,7 +82,7 @@
 }
 
 \acknowledgements{
-
+I would like to express my gratitude to my supervisor, Dr Gavin Cawley, for his support and guidance throughout the project and the engineers at Raspberry Pi for their insights and time.
 }
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -119,7 +119,7 @@
 \section{Introduction}
 Modern embedded systems offer versatile platforms for hobbyist and industrial applications with versatile peripheral interfaces and high-speed memory access. Among these platforms, Raspberry Pi established themselves as low-cost single board computer specialists, offering flexibility and accessibility for both research and industrial applications. However, hardware manufacturers moving away from parallel interfaces has silently deprecated support for legacy systems, forcing developers to rely on additional hardware or simulations to maintain compatibility. 
 
-This project focuses on the Secondary Memory Interface (SMI), produced by Broadcom and accessible on Raspberry Pi boards, designed to facilitate high-speed parallel memory access. Despite its unique nature, there is limited documentation and practical guidance on implementing and supporting SMI.~This project's aim is twofold: first, to provide comprehensive documentation and a user-space API for the SMI on Raspberry Pi;~and second, to implement a functional shared memory system that demonstrates efficient data transfer between multiple processes and devices.
+This project focuses on the Secondary Memory Interface (SMI), produced by Broadcom and accessible on Raspberry Pi boards, designed to facilitate high-speed parallel memory access. Despite its unique nature, the SMI has seen limited adoption and has been described as an `unloved peripheral' in industry practice~\cite{zotero-item-18}, contributing to the lack of widespread documentation and tooling. This project's aim is twofold: first, to provide comprehensive documentation and a user-space API for the SMI on Raspberry Pi;~and second, to implement a functional shared memory system that demonstrates efficient data transfer between multiple processes and devices.
 
 By combining thorough documentation and practical implementation, this project contributes both as a future reference for developers and as a practical example for high-speed shared memory usage on Raspberry Pi systems. The resulting implementation provides a platform for creating legacy support for deprecated parallel interfaces, while also encouraging further exploration of shared memory architectures on Raspberry Pi.
 
@@ -131,9 +131,47 @@ This paper presents the design, implementation and benchmarking of the Secondary
 \subsection{Parallel Interfaces}
 The terms parallel and serial, when used to describe an interface, refers to the number of data lines used for communication. A parallel bus transmits multiple bits simultaneously across several lines whereas, a serial bus transmits data over a single line sequentially. The popularity of parallel interfaces was driven largely by the weak compute power of the era, with data rates limited to megatransfers per second, widening the data bus was the only way to increase throughput. These interfaces were widely used for storage devices, PATA (IDE), and external printers via IEEE 1284 (often referred to as \textit{Centronics} port).
 
-Serial transmission offers clear advantages across the system, from silicon to software, due to advances in silicon technology and signal integrity have allowed serial interfaces, such as USB and SATA, to achieve higher data rates. Modern implementations support multi gigatransfer per second data rates while minimising board area and lowers the risk of manufacturing defects. As a result, many parallel interfaces have been gradually deprecated, leaving legacy systems dependant on aging hardware or ad hoc solutions to maintain compatibility with modern storage and peripheral devices.
+Serial transmission offers clear advantages across the system, from silicon to software, due to advances in silicon technology and signal integrity allowing serial interfaces, such as USB and SATA, to achieve higher data rates. Modern implementations support multi gigatransfer per second data rates while minimising board area and lowers the risk of manufacturing defects. As a result, serial interfaces offer improved scalability and reduced hardware complexity compared to traditional parallel buses~\cite{zotero-item-18}. Parallel interfaces have been gradually deprecated, leaving legacy systems dependant on aging hardware or ad hoc solutions to maintain compatibility with modern storage and peripheral devices.
+
+\subsection{User vs Kernel Space}
+% Difference between user and kernel space - why it is a good model
+% Performance overhead with system calls
+% Mention goal is to implement completely in user space <- Explanation on how and why in methodology
+% Explain how optional kernel modules are used for the interrupts
+Modern operating systems implement memory and execution privileges as a hierarchical protection model, commonly referred to as privilege rings, which partitions execution into distinct levels of hardware access~\cite{tanenbaumModernOperatingSystems2015}. Linux makes use of two of these rings in practice: Ring 3 (user space) and Ring 0 (kernel space). Kernel space is reserved for the operating system itself with elevated hardware and system resources, whilst user space is where application code executes under controlled conditions with hardware access mediated by the kernel~\cite{IntroductionLinuxKernel}. The separation exists to maintain system integrity; by restricting direct access to hardware, a malicious user-space process cannot easily corrupt hardware state or destabilise the operating system. The kernel mediates elevated privileges through system calls, ensuring calls are validated before executing.
+
+While the hierarchical protection model is a well-established method for enforcing integrity, the systems in place produce computational overhead in user space~\cite{minghaoPerformanceAnalysisOptimization2007}. Kernel space has been the de facto ring for implementation, offering streamlined performance and greater system control. This is a natural choice for hardware manufacturers, who can distribute drivers as part of official kernel builds with well-established security guarantees. However, for user-developed drivers, operating in kernel space raises significant security implications, as providing unrestricted hardware access to an unverified source is heavily discouraged. Instead, user-developed drivers are more commonly implemented in user space, utilising existing kernel interfaces to provide support for functionality overlooked or undocumented by the vendor. A sufficiently mature kernel will expose enough interface surface for the user-space drivers to be a viable alternative to kernel-space implementations.
+
+\subsubsection{Hardware Interrupt Handling}
+Hardware interrupts are a physical method of alerting hardware 
+
+\subsubsection{Kernel Modules}
+Functionality is primarily built into the kernel at build time however, kernel modules allow functionality to be loaded and unloaded from the kernel on demand without rebooting the system. The flexibility of kernel modules make a great platform for on-demand kernel development
+
+\subsection{Direct Memory Access}
 
 \subsection{Raspberry Pi Secondary Memory Interface (SMI)}
+The Secondary Memory Interface is a parallel interface implemented by Broadcom on the BCM283x family of system on chips (SoCs), commonly found on the Raspberry Pi product range. The SMI is intended as an external memory bus to interface with peripheral devices that would otherwise impose performance constraints if connected directly to the system bus~\cite{zotero-item-12}. It supports a range of register based devices and provides configurable bus widths along with precise timing control, making it well suited for interfacing with storage devices that operate at significantly lower clock speeds than the system bus.
+
+\subsubsection{SMI in Production}
+% Add information on the BCM SMI driver
+Industry partners often receive extended documentation that is held under NDA, yet according to communication with Raspberry Pi engineers, this documentation contains little beyond what is publicly available~\cite{zotero-item-18}. Despite this limited additional coverage, industry implementations do exist; for instance, an official NAND flash driver~\cite{nandflashdriver} demonstrates the interface in practice and has been reported as the means by which firmware was loaded from a NAND flash chip on legacy Roku devices~\cite{byRaspberryPiHat2021}.
+
+\subsubsection{SMI in Open Source Projects}
+% Industry has limited examples
+% Open source attempts: Bentham, RF Pi hat
+% Why they are limited and have minimal coverage
+While industry implementations are seldom publicly documented, open-source examples do exist, most notably J Bentham's work on reverse engineering the SMI~\cite{iosoftcodeRaspberryPiSecondary2020}. Bentham's work, while demonstrating that the SMI can be used effectively for high-speed parallel data transfer, is confined to specific ADC and DAC applications and operates at the direct register manipulation level with no abstraction layer or reusable API.\@ This, combined with Bentham's self acknowledgement lacunae surrounding the register definitions~\cite{iosoftcodeRaspberryPiSecondary2020}, illustrates the current state of documentation available to developers: narrow in scope and difficult to build upon.
+
+A more complete, though still application specific, implementation can be found in the CaribouLite project~\cite{CariboulabsCariboulite2026}, an open-source SDR HAT for the Raspberry Pi. Rather than direct register manipulation, CaribouLite introduces \textit{smi\_stream\_dev}, a custom kernel module that layers a cyclic DMA mechanism and software FIFO over the SMI hardware, exposing it as a standard character device. Despite this approach's greater sophistication, and its notably elegant polling mechanism, the implementation remains application specific and does not constitute a general purpose SMI API.
+
+\subsection{Dual Port SRAM}
+
+\subsection{API Design}
+
+\subsection{Shared Memory Architecture}
+
+\subsection{Synchronisation}
 
 
 \bibliography{reportbib}

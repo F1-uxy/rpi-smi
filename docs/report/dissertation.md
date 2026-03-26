@@ -22,6 +22,7 @@
     <li> Automatically use DMA over a certain transfer size like the kernel
     <li> SMI IRQ kernel module, how to await on the done.
     <li> RXD & TXD are swapped in the documentation.
+    <li> DMA can't keep up and drops words on raspberry pi 3 & 4
 </ul>
 
 RXF -> TXE
@@ -42,6 +43,7 @@ The benchmark enviornment:
 #### Good Articles:
 [LUT vs Branches](https://specbranch.com/posts/lookup-tables/)
 [Raspberry Pi Memory Heirachy](https://sandsoftwaresound.net/raspberry-pi/raspberry-pi-gen-1/memory-hierarchy/)
+[SMI Initial Forum](https://forums.raspberrypi.com/viewtopic.php?t=280242)
 
 A priori
 
@@ -58,7 +60,10 @@ A priori
 
 ##### Background
 <ul>
-    <li> What is the Secondary Memory Interface
+    <li> Secondary Memory Interface
+    <li> Direct Memory Access
+    <li> Shared Memory Architectures
+    <li> Kernel vs user space
     <li> Motivation of the project
     <li> Current implemenations (literature review) and limitations
 </ul>
