@@ -140,39 +140,51 @@ Serial transmission offers clear advantages across the system, from silicon to s
 % Explain how optional kernel modules are used for the interrupts
 Modern operating systems implement memory and execution privileges as a hierarchical protection model, commonly referred to as privilege rings, which partitions execution into distinct levels of hardware access~\cite{tanenbaumModernOperatingSystems2015}. Linux makes use of two of these rings in practice: Ring 3 (user space) and Ring 0 (kernel space). Kernel space is reserved for the operating system itself with elevated hardware and system resources, whilst user space is where application code executes under controlled conditions with hardware access mediated by the kernel~\cite{IntroductionLinuxKernel}. The separation exists to maintain system integrity; by restricting direct access to hardware, a malicious user-space process cannot easily corrupt hardware state or destabilise the operating system. The kernel mediates elevated privileges through system calls, ensuring calls are validated before executing.
 
-While the hierarchical protection model is a well-established method for enforcing integrity, the systems in place produce computational overhead in user space~\cite{minghaoPerformanceAnalysisOptimization2007}. Kernel space has been the de facto ring for implementation, offering streamlined performance and greater system control. This is a natural choice for hardware manufacturers, who can distribute drivers as part of official kernel builds with well-established security guarantees. However, for user-developed drivers, operating in kernel space raises significant security implications, as providing unrestricted hardware access to an unverified source is heavily discouraged. Instead, user-developed drivers are more commonly implemented in user space, utilising existing kernel interfaces to provide support for functionality overlooked or undocumented by the vendor. A sufficiently mature kernel will expose enough interface surface for the user-space drivers to be a viable alternative to kernel-space implementations.
-
-\subsubsection{Hardware Interrupt Handling}
-Hardware interrupts are a physical method of alerting hardware 
+While the hierarchical protection model is a well-established method for enforcing integrity, the systems in place produce computational overhead in user space~\cite{minghaoPerformanceAnalysisOptimization2007}. Kernel space has been the de facto ring for implementation, offering streamlined performance and greater system control. This is a natural choice for hardware manufacturers, who can distribute drivers as part of official kernel builds with well-established security guarantees. However, for user-developed drivers, operating in kernel space raises significant security implications, as providing unrestricted hardware access to an unverified source is heavily discouraged. Instead, user-developed drivers are more commonly implemented in user space, utilising existing kernel interfaces to provide support for functionality overlooked or undocumented by the vendor. Recent research argues that the overhead of user-space drivers are sufficiently low that the performance compromises become inconsequential compared to the increased safety~\cite{metzgerDeprivilegingLowLevelGPU2025}. Furthermore, the degree of this overhead is largely a function of kernel design~\cite{PerformanceUKernelBasedSystems}; a sufficiently mature kernel will expose an efficient enough interface surface that user-space drivers become a fully viable alternative to kernel-space implementation.
 
 \subsubsection{Kernel Modules}
-Functionality is primarily built into the kernel at build time however, kernel modules allow functionality to be loaded and unloaded from the kernel on demand without rebooting the system. The flexibility of kernel modules make a great platform for on-demand kernel development
+% What a kernel module is
+Functionality is primarily loaded into the kernel at build time however, kernel modules allow functionality to be loaded and unloaded from the kernel on demand without rebooting the system, using tools such as \texttt{insmod} and \texttt{rmmod}. This flexibility makes kernel modules a practical platform for extending kernel functionality without modifying the kernel source. However, as kernel modules execute with full Ring 0 privileges, they carry the same security implications as built-in kernel code, making it desirable to keep any custom module as minimal as possible.
 
-\subsection{Direct Memory Access}
+\subsection{Hardware Interrupt Handling}
+% What hardware interrupts are
+% How they are exposed to user space
+% How hardware interrupts promote good user-space driver development 
+A fundamental challenge of hardware driver design is responding to asynchronous hardware events without continuously polling the device, wasting processor cycles. Hardware interrupts address this by providing an asynchronous signal mechanism through which peripherals notify the processor directly when attention is required, temporarily suspending the current execution context to service the event. To manage the array of hardware interrupts that could be connected at any given moment, interrupt handlers are registered to specific interrupts to field each event and invoke the appropriate response. Hardware interrupts present a particular challenge for user-space driver development; while they are the primary mechanism by which hardware signals interact with software, interrupt handlers must be registered with the kernel and therefore cannot be implemented directly in user space. 
+
+\subsubsection{Userspace I/O}
+To bridge this gap, the kernel can expose interrupt events to user space through a character device, allowing user-space processes to block on a \texttt{read} or \texttt{poll} clause until an interrupt occurs~\cite{UserspaceHOWTOLinux}. This approach taken by the Linux \textit{UIO} (Userspace I/O) subsystem, which provides a standard mechanism for exposing hardware interrupts to user space via a file descriptor, enables interrupt-driven design in user space. While the security implications of custom kernel modules are well understood, the simplicity of this mechanism makes a minimal interrupt-handling module a feasible and auditable supplement to a manufacturer's existing hardware support.
+
+\subsection{Direct Memory Access (DMA)}
+% What DMA is
+% Why normal transfers take up so much compute
+% How we can use DMA to make software fast and do compute while we wait for it
+
 
 \subsection{Raspberry Pi Secondary Memory Interface (SMI)}
 The Secondary Memory Interface is a parallel interface implemented by Broadcom on the BCM283x family of system on chips (SoCs), commonly found on the Raspberry Pi product range. The SMI is intended as an external memory bus to interface with peripheral devices that would otherwise impose performance constraints if connected directly to the system bus~\cite{zotero-item-12}. It supports a range of register based devices and provides configurable bus widths along with precise timing control, making it well suited for interfacing with storage devices that operate at significantly lower clock speeds than the system bus.
 
-\subsubsection{SMI in Production}
+\subsubsection{SMI in Industry}
 % Add information on the BCM SMI driver
 Industry partners often receive extended documentation that is held under NDA, yet according to communication with Raspberry Pi engineers, this documentation contains little beyond what is publicly available~\cite{zotero-item-18}. Despite this limited additional coverage, industry implementations do exist; for instance, an official NAND flash driver~\cite{nandflashdriver} demonstrates the interface in practice and has been reported as the means by which firmware was loaded from a NAND flash chip on legacy Roku devices~\cite{byRaspberryPiHat2021}.
 
-\subsubsection{SMI in Open Source Projects}
+\subsubsection{SMI in Open-Source Projects}
 % Industry has limited examples
 % Open source attempts: Bentham, RF Pi hat
 % Why they are limited and have minimal coverage
-While industry implementations are seldom publicly documented, open-source examples do exist, most notably J Bentham's work on reverse engineering the SMI~\cite{iosoftcodeRaspberryPiSecondary2020}. Bentham's work, while demonstrating that the SMI can be used effectively for high-speed parallel data transfer, is confined to specific ADC and DAC applications and operates at the direct register manipulation level with no abstraction layer or reusable API.\@ This, combined with Bentham's self acknowledgement lacunae surrounding the register definitions~\cite{iosoftcodeRaspberryPiSecondary2020}, illustrates the current state of documentation available to developers: narrow in scope and difficult to build upon.
+While industry implementations are seldom publicly documented, open-source examples do exist, most notably J Bentham's work on reverse engineering the SMI~\cite{iosoftcodeRaspberryPiSecondary2020}. Bentham's work, while demonstrating that the SMI can be used effectively for high-speed parallel data transfer, is confined to specific ADC and DAC applications and operates at the direct register manipulation level with no abstraction layer or reusable API.\@ This, combined with Bentham's self acknowledged lacunae surrounding the register definitions~\cite{iosoftcodeRaspberryPiSecondary2020}, illustrates the current narrow state of documentation available to developers.
 
 A more complete, though still application specific, implementation can be found in the CaribouLite project~\cite{CariboulabsCariboulite2026}, an open-source SDR HAT for the Raspberry Pi. Rather than direct register manipulation, CaribouLite introduces \textit{smi\_stream\_dev}, a custom kernel module that layers a cyclic DMA mechanism and software FIFO over the SMI hardware, exposing it as a standard character device. Despite this approach's greater sophistication, and its notably elegant polling mechanism, the implementation remains application specific and does not constitute a general purpose SMI API.
 
 \subsection{Dual Port SRAM}
+% Optional if there is space
 
 \subsection{API Design}
 
 \subsection{Shared Memory Architecture}
 
 \subsection{Synchronisation}
-
+% Optional if there is space
 
 \bibliography{reportbib}
 

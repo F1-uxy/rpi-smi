@@ -23,6 +23,7 @@
     <li> SMI IRQ kernel module, how to await on the done.
     <li> RXD & TXD are swapped in the documentation.
     <li> DMA can't keep up and drops words on raspberry pi 3 & 4
+    <li> Multi core bus contentions vs single core  
 </ul>
 
 RXF -> TXE
@@ -70,17 +71,11 @@ A priori
 
 ##### Methodology
 <ul>
-    <li> Secondary Memory Interface
-    <li> Direct Memory Access
-    <li> Kernel modules
-    <li> Shared memory architecture
-</ul>
-
-##### Implementation
-<ul>
     <li> API design (style and functionality)
     <li> Corrections of current documentation
+    <li> Bus contentions for multi vs single core
 </ul>
+
 
 ##### Results and Analysis
 
