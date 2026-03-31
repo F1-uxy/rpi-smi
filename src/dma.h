@@ -3,7 +3,8 @@
 
 #include "gpio.h"
 
-#define DMA_BUFFER_SIZE 1024
+/* mmap'd size not the udmabuf size */
+#define DMA_BUFFER_SIZE 2048
 
 #define UDMABUF_SYS "/sys/class/u-dma-buf/udmabuf0/"
 #define SIZE_FILE "size"

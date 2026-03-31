@@ -9,6 +9,8 @@
     #error "Pi 5 requires different peripheral mapping"
 #endif
 
+#define BUS_REG_BASE 0x7E000000
+
 #if defined(__aarch64__)
     #define PI_ARM64
 #elif defined(__arm__)
@@ -16,10 +18,10 @@
 #endif
 
 /* Location of peripheral registers in physical memory*/
-#define CLOCK_HZ 250000000       /* Pi 3 */
+#define CLOCK_HZ 250000000       /* Pi 3 or Clamp to this on Pi 5 */
 
 /* Location of peripheral registers in bus memory */
-#define BUS_REG_BASE 0x74000000
+//#define BUS_REG_BASE 0x74000000
 
 /* Struct for mapped peripheral or memory */
 typedef struct {
