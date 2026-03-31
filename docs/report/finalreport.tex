@@ -1,0 +1,199 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Created by Pierre Chardaire. 
+% Updated by Rudy Lapeer update: 10/2024
+% Final Update by Mohsin Raza Last update: 10/2025
+% Change the option between square brackets
+% depending on the document you have to write:
+%
+% review      for the literature review + plan
+% progress    for the progress report
+% final       for the final report
+% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[final]{cmpreport}
+
+
+% Some package I am using. You may not need them
+%
+\usepackage{rotating}
+\usepackage{subfloat}
+\usepackage{color}
+\usepackage{pdfpages}
+\usepackage{url}
+%\setkeys{Gin}{draft}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Fill in the fields with:
+%
+%  your project title
+%  your name
+%  your registration number
+%  your supervisor's name
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\title{High Speed Communication Between Raspberry Pi via Secondary Memory Interface}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% The author's name is ignored if the following command 
+% is not present in the document
+%
+% Before submitting a PDF of your final report to the 
+% project database you may comment out the command
+% if you are worried about lack of anonymity.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\author{Charlie Flux}
+
+\registration{100392431}
+\supervisor{Gavin Cawley}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Fill in the field with your module code.
+% this should be:
+%
+% for BIS project module   -> CMP-6012Y
+% for STATS project module -> CMP-6028Y
+% for CS project module    -> CMP-6013Y
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\ccode{CMP-7043Y}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Comment out if confidential report.
+% The command should be used if the project is subjected 
+% to a Non Disclosure Agreement.
+%
+% Three examples of the use of the \confidential command. 
+% Please ask your supervisor what confidential statement 
+% should be used, if appropriate.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\confidential{}
+
+%\confidential{The contents of this report remain confidential for two years and should not be discussed or disclosed to any third party without the prior written permission from the School of Computing Sciences, the University of East Anglia}
+
+%\confidential{The information contained in this document is confidential, privileged and only for the information of the intended recipient and may not be used, published or redistributed without the prior written consent of FruitName Ltd}
+
+\summary{
+
+}
+
+\acknowledgements{
+I would like to express my gratitude to my supervisor, Dr Gavin Cawley, for his support and guidance throughout the project and the engineers at Raspberry Pi for their insights and time.
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% If you do not want a list of figures and a list of tables
+% to appear after the table of content then uncomment this line 
+%
+% Note that the class file contains code to avoid
+% producing an empty list section (e.g list of figures) if the 
+% list is empty (i.e. no figure in document).
+%
+% The command also prevents inserting a list of figures or tables 
+% anywhere else in the document
+%
+% Some supervisors think that a report should not contain these
+% lists. Please ask your supervisor's opinion.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\nolist
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Comment out if you want your list of figures and list of
+% tables on two or more pages, in particular if the lists do not fit 
+% on a single page.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\onePageLists
+
+
+\begin{document}
+
+
+\section{Introduction}
+Modern embedded systems offer versatile platforms for hobbyist and industrial applications with versatile peripheral interfaces and high-speed memory access. Among these platforms, Raspberry Pi established themselves as low-cost single board computer specialists, offering flexibility and accessibility for both research and industrial applications. However, hardware manufacturers moving away from parallel interfaces has silently deprecated support for legacy systems, forcing developers to rely on additional hardware or simulations to maintain compatibility. 
+
+This project focuses on the Secondary Memory Interface (SMI), produced by Broadcom and accessible on Raspberry Pi boards, designed to facilitate high-speed parallel memory access. Despite its unique nature, the SMI has seen limited adoption and has been described as an `unloved peripheral' in industry practice~\cite{zotero-item-18}, contributing to the lack of widespread documentation and tooling. This project's aim is twofold: first, to provide comprehensive documentation and a user-space API for the SMI on Raspberry Pi;~and second, to implement a functional shared memory system that demonstrates efficient data transfer between multiple processes and devices.
+
+By combining thorough documentation and practical implementation, this project contributes both as a future reference for developers and as a practical example for high-speed shared memory usage on Raspberry Pi systems. The resulting implementation provides a platform for creating legacy support for deprecated parallel interfaces, while also encouraging further exploration of shared memory architectures on Raspberry Pi.
+
+% This needs to be reviewed throughout the paper...
+This paper presents the design, implementation and benchmarking of the Secondary Memory Interface on Raspberry Pi boards, highlighting performance differences across configurable modes and devices, in turn identifying best practices for efficient shared memory communication.
+
+\section{Background}
+
+\subsection{Parallel Interfaces}
+The terms parallel and serial, when used to describe an interface, refers to the number of data lines used for communication. A parallel bus transmits multiple bits simultaneously across several lines whereas, a serial bus transmits data over a single line sequentially. The popularity of parallel interfaces was driven largely by the weak compute power of the era, with data rates limited to megatransfers per second, widening the data bus was the only way to increase throughput. These interfaces were widely used for storage devices, PATA (IDE), and external printers via IEEE 1284 (often referred to as \textit{Centronics} port).
+
+Serial transmission offers clear advantages across the system, from silicon to software, due to advances in silicon technology and signal integrity allowing serial interfaces, such as USB and SATA, to achieve higher data rates. Modern implementations support multi gigatransfer per second data rates while minimising board area and lowers the risk of manufacturing defects. As a result, serial interfaces offer improved scalability and reduced hardware complexity compared to traditional parallel buses~\cite{zotero-item-18}. Parallel interfaces have been gradually deprecated, leaving legacy systems dependant on aging hardware or ad hoc solutions to maintain compatibility with modern storage and peripheral devices.
+
+\subsection{User vs Kernel Space}
+% Difference between user and kernel space - why it is a good model
+% Performance overhead with system calls
+% Mention goal is to implement completely in user space <- Explanation on how and why in methodology
+% Explain how optional kernel modules are used for the interrupts
+Modern operating systems implement memory and execution privileges as a hierarchical protection model, commonly referred to as privilege rings, which partitions execution into distinct levels of hardware access~\cite{tanenbaumModernOperatingSystems2015}. Linux makes use of two of these rings in practice: Ring 3 (user space) and Ring 0 (kernel space). Kernel space is reserved for the operating system itself with elevated hardware and system resources, whilst user space is where application code executes under controlled conditions with hardware access mediated by the kernel~\cite{IntroductionLinuxKernel}. The separation exists to maintain system integrity; by restricting direct access to hardware, a malicious user-space process cannot easily corrupt hardware state or destabilise the operating system. The kernel mediates elevated privileges through system calls, ensuring calls are validated before executing.
+
+While the hierarchical protection model is a well-established method for enforcing integrity, the systems in place produce computational overhead in user space~\cite{minghaoPerformanceAnalysisOptimization2007}. Kernel space has been the de facto ring for implementation, offering streamlined performance and greater system control. This is a natural choice for hardware manufacturers, who can distribute drivers as part of official kernel builds with well-established security guarantees. However, for user-developed drivers, operating in kernel space raises significant security implications, as providing unrestricted hardware access to an unverified source is heavily discouraged. Instead, user-developed drivers are more commonly implemented in user space, utilising existing kernel interfaces to provide support for functionality overlooked or undocumented by the vendor. Recent research argues that the overhead of user-space drivers are sufficiently low that the performance compromises become inconsequential compared to the increased safety~\cite{metzgerDeprivilegingLowLevelGPU2025}. Furthermore, the degree of this overhead is largely a function of kernel design~\cite{PerformanceUKernelBasedSystems}; a sufficiently mature kernel will expose an efficient enough interface surface that user-space drivers become a fully viable alternative to kernel-space implementation.
+
+\subsubsection{Kernel Modules}
+% What a kernel module is
+Functionality is primarily loaded into the kernel at build time however, kernel modules allow functionality to be loaded and unloaded from the kernel on demand without rebooting the system, using tools such as \texttt{insmod} and \texttt{rmmod}. This flexibility makes kernel modules a practical platform for extending kernel functionality without modifying the kernel source. However, as kernel modules execute with full Ring 0 privileges, they carry the same security implications as built-in kernel code, making it desirable to keep any custom module as minimal as possible.
+
+\subsection{Hardware Interrupt Handling}
+% What hardware interrupts are
+% How they are exposed to user space
+% How hardware interrupts promote good user-space driver development 
+A fundamental challenge of hardware driver design is responding to asynchronous hardware events without continuously polling the device, wasting processor cycles. Hardware interrupts address this by providing an asynchronous signal mechanism through which peripherals notify the processor directly when attention is required, temporarily suspending the current execution context to service the event. To manage the array of hardware interrupts that could be connected at any given moment, interrupt handlers are registered to specific interrupts to field each event and invoke the appropriate response. Hardware interrupts present a particular challenge for user-space driver development; while they are the primary mechanism by which hardware signals interact with software, interrupt handlers must be registered with the kernel and therefore cannot be implemented directly in user space. 
+
+\subsubsection{Userspace I/O}
+To bridge this gap, the kernel can expose interrupt events to user space through a character device, allowing user-space processes to block on a \texttt{read} or \texttt{poll} clause until an interrupt occurs~\cite{UserspaceHOWTOLinux}. This approach taken by the Linux \textit{UIO} (Userspace I/O) subsystem, which provides a standard mechanism for exposing hardware interrupts to user space via a file descriptor, enables interrupt-driven design in user space. While the security implications of custom kernel modules are well understood, the simplicity of this mechanism makes a minimal interrupt-handling module a feasible and auditable supplement to a manufacturer's existing hardware support.
+
+\subsection{Direct Memory Access (DMA)}
+% What DMA is
+% Why normal transfers take up so much compute
+% How we can use DMA to make software fast and do compute while we wait for it
+
+
+\subsection{Raspberry Pi Secondary Memory Interface (SMI)}
+The Secondary Memory Interface is a parallel interface implemented by Broadcom on the BCM283x family of system on chips (SoCs), commonly found on the Raspberry Pi product range. The SMI is intended as an external memory bus to interface with peripheral devices that would otherwise impose performance constraints if connected directly to the system bus~\cite{zotero-item-12}. It supports a range of register based devices and provides configurable bus widths along with precise timing control, making it well suited for interfacing with storage devices that operate at significantly lower clock speeds than the system bus.
+
+\subsubsection{SMI in Industry}
+% Add information on the BCM SMI driver
+Industry partners often receive extended documentation that is held under NDA, yet according to communication with Raspberry Pi engineers, this documentation contains little beyond what is publicly available~\cite{zotero-item-18}. Despite this limited additional coverage, industry implementations do exist; for instance, an official NAND flash driver~\cite{nandflashdriver} demonstrates the interface in practice and has been reported as the means by which firmware was loaded from a NAND flash chip on legacy Roku devices~\cite{byRaspberryPiHat2021}.
+
+\subsubsection{SMI in Open-Source Projects}
+% Industry has limited examples
+% Open source attempts: Bentham, RF Pi hat
+% Why they are limited and have minimal coverage
+While industry implementations are seldom publicly documented, open-source examples do exist, most notably J Bentham's work on reverse engineering the SMI~\cite{iosoftcodeRaspberryPiSecondary2020}. Bentham's work, while demonstrating that the SMI can be used effectively for high-speed parallel data transfer, is confined to specific ADC and DAC applications and operates at the direct register manipulation level with no abstraction layer or reusable API.\@ This, combined with Bentham's self acknowledged lacunae surrounding the register definitions~\cite{iosoftcodeRaspberryPiSecondary2020}, illustrates the current narrow state of documentation available to developers.
+
+A more complete, though still application specific, implementation can be found in the CaribouLite project~\cite{CariboulabsCariboulite2026}, an open-source SDR HAT for the Raspberry Pi. Rather than direct register manipulation, CaribouLite introduces \textit{smi\_stream\_dev}, a custom kernel module that layers a cyclic DMA mechanism and software FIFO over the SMI hardware, exposing it as a standard character device. Despite this approach's greater sophistication, and its notably elegant polling mechanism, the implementation remains application specific and does not constitute a general purpose SMI API.
+
+\subsection{Dual Port SRAM}
+% Optional if there is space
+
+\subsection{API Design}
+
+\subsection{Shared Memory Architecture}
+
+\subsection{Synchronisation}
+% Optional if there is space
+
+\bibliography{reportbib}
+
+\appendix
+\clearpage
+
+\clearpage
+\section{Gantt chart} \label{ApB}
+
+
+\end{document}
+
