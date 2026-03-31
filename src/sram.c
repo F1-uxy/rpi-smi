@@ -131,11 +131,12 @@ void* cpu_load(void* args)
 
 #define TEST_ITERATIONS 5
 #define ITERATIONS 1048576
-#define DEVICE "RPI3B+"
+#define DEVICE "RPI4"
 #define METHOD "SMI"
 #define WIDTH 8
 #define PACK "RGB565"
-#define OPTIMISATION "O3"
+#define OPTIMISATION "O0"
+#define OS 64
 
 void megbyte_load_block_test(SMI_CXT* cxt)
 {
@@ -183,8 +184,9 @@ void megbyte_load_block_test(SMI_CXT* cxt)
         printf("Throughput: %f MB/s ; %f MT/s\n", mbps, mts);
         printf("Std deviation: %f s\n", stddev);
 
-        fprintf(csv, "%s,%s,%s,%d,%s,%d,%.9f,%.6f,%.6f,%.6f\n",
-                DEVICE, OPTIMISATION, METHOD, WIDTH, PACK, block, average, stddev, mbps, mts);
+        fprintf(csv, "%s,%d,%s,%s,%d,%s,%d,%.9f,%.6f,%.6f,%.6f\n",
+                DEVICE, OS, OPTIMISATION, METHOD, WIDTH, PACK, block, average, stddev, mbps, mts);
+
     }
 
     fclose(csv);

@@ -77,6 +77,7 @@
 
 #define SMI_DMA_L(l) (l*4)
 #define SMI_DIV(count, ratio) ((float)count/(float)ratio + ((int)count % (int)ratio != 0));
+#define SMI_DIV_CEIL(a, b)  (((a) + (b) - 1) / (b))
 
 typedef struct {
     uint8_t read;

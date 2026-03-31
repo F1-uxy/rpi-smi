@@ -24,7 +24,7 @@ void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MA
 
     /* Map SMI regs */
     map_segment(smi_regs, SMI_BASE, PAGE_SIZE);
-    smi_regs->bus = smi_regs->phys - PHYS_REG_BASE + 0x7E000000;
+    smi_regs->bus = smi_regs->phys - PHYS_REG_BASE + BUS_REG_BASE;
     smi_gpio_init(*gpio_regs);
 
     /* Map CLK regs */
@@ -104,7 +104,7 @@ void smi_unmap_udmabuf(SMI_CXT* cxt)
 /* ns: Clock period; even number 2 -> 30*/
 void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns)
 {    
-    int divi = ns/2; /* Only valid on RPI 3 */
+    int divi = ns/2;
 
     if(*REG32(clk_regs, CLK_SMI_DIV) != divi << 12)
     {
@@ -225,32 +225,36 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     /* We can assume that if data is leftover in the FIFO is hardware fault? */
     while(count < len)
     {
-
+        //printf("Len %d vs Count %d ; Done %d\n", len, count, (cs->fields.done > 0));
+        //printf("RXF: %d ; RXD: %d ; RXR: %d ; TXE: %d ; TXD: %d ; TXW: %d\n", (cs->fields.rxf > 0), (cs->fields.rxd > 0), (cs->fields.rxr > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.txw > 0));
+        
         if (cs->fields.rxd) 
         {
-            volatile uint32_t word = d->value;
-            ret_data[count++] = word;
+            ret_data[count++] = d->value;
             spin = 0;
             continue;
         }
 
-        if(spin > SPIN_HARD_LIMIT)
+        if(timeout_check_spin(deadline, spin, SPIN_HARD_LIMIT, SPIN_MALLEABLE_LIMIT, SPIN_SOFT_LIMIT) < 0)
         {
-            __yield();
-        } else if (spin > SPIN_MALLEABLE_LIMIT)
-        {
-            sched_yield();
-        } else if (spin > SPIN_SOFT_LIMIT)
-        {
-            if(timeout_complete(deadline))
-            {
-                ERROR("Programmed read data fetch timeout");
-                cs->fields.clear = 1;
-                return -ETIMEDOUT;
-            }
+            ERROR("Read await timeout reached");
+            cs->fields.clear = 1;
+            return -ETIMEDOUT;
         }
 
         spin++;
+    }
+
+    // while(cs->fields.rxd && count < len)
+    // {
+    //     //printf("Len %d vs Count %d ; Done %d\n", len, count, (cs->fields.done > 0));
+    //     //printf("RXF: %d ; RXD: %d ; RXR: %d ; TXE: %d ; TXD: %d ; TXW: %d\n", (cs->fields.rxf > 0), (cs->fields.rxd > 0), (cs->fields.rxr > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.txw > 0));
+    //     ret_data[count++] = d->value;
+    // }
+
+    if(count < len)
+    {
+        ERROR("Transfer complete but data lost. Slow the clock");
     }
 
     if(cs->fields.rxd)
@@ -258,7 +262,6 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         ERROR("Leftover data in the RX FIFO");
     }
     
-
     return count;
 }
 
@@ -378,7 +381,7 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
     int count = 0;
     smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
-    int word_reads = SMI_DIV((len * ratio.read), ratio.out_pixels);
+    int word_reads = SMI_DIV_CEIL((len * ratio.read), ratio.out_pixels);
 
     if(word_reads > cxt->raw_buffer.size)
     {
@@ -423,12 +426,10 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
     a->fields.addr = addr;
     smi_start(cxt);
     count = smi_read_await(cxt, raw_data, word_reads);
-
     /*  Unpack all the raw data even if we didn't fill the buffer during reads.
         We can't count the individual reads when packed, only the overall words read.
     */
     cxt->pxldata ? smi_unpack(cxt, raw_data, ret_data, word_reads, ratio) : smi_truncate(cxt, raw_data, ret_data, count);
-    
     return count;
 
 }

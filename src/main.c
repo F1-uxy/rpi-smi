@@ -45,7 +45,7 @@ int main()
 
     smi_init_cxt_map(&cxt, &smi_regs, &clk_regs, &gpio_regs, &dma_regs);
     smi_init_rw_config(&cxt, &rw, &clk, &rconfig, &wconfig, SMI_DEVICE1, SMI_DEVICE1);
-    init_smi_clk(clk_regs, smi_regs, 2);
+    init_smi_clk(clk_regs, smi_regs, 4);
 
     smi_sync_context_device(&cxt);
     smi_init_udmabuf(&cxt, &dma_buffer);
@@ -91,7 +91,6 @@ int main()
     
     uintptr_t src_offset = (uintptr_t) msg - (uintptr_t)dma_buffer.virt;
     cb->src_addr = (uint32_t)((uintptr_t)dma_buffer.bus + src_offset);
-    */
     memset(dma_buffer.virt, 0, 1024 * sizeof(uint32_t));
     smi_dma_setup(smi_regs);
     DMA_CS* d_cs = (DMA_CS*) REG32(dma_regs, DMAO_CS);
@@ -126,9 +125,9 @@ int main()
     cxt.pxldata = 0;
     smi_sync_context_device(&cxt);
 
-    smi_programmed_write_dma(&cxt, cb, 0, len, 0);
-    smi_programmed_read_dma(&cxt, cb, 0, len, 0);
-    //smi_programmed_read_arr(&cxt, ret_data, 0, len);
+    //smi_programmed_write_dma(&cxt, cb, 0, len, 0);
+    //smi_programmed_read_dma(&cxt, cb, 0, len, 0);
+    smi_programmed_read_arr(&cxt, ret_data, 0, len);
 
     printf("DMA CS: state = %d\n", d_debug->fields.dma_state);
     sync_for_cpu(cxt.fd_sync_cpu);
@@ -141,6 +140,7 @@ int main()
     printf("Total count: %d\n", count);
     //printf("Result: %d ; %d ; %d ; %d\n", rxdata[0], rxdata[1], rxdata[2], rxdata[3]);
 
+    */
     volatile SMI_CS* smi_cs  = (volatile SMI_CS*) REG32(smi_regs, SMIO_CS);
     volatile SMI_DSR* smi_dsr0 = (volatile SMI_DSR*) REG32(smi_regs, SMIO_DSR0);
     volatile SMI_DSW* smi_dsw0 = (volatile SMI_DSW*) REG32(smi_regs, SMIO_DSW0);
@@ -187,7 +187,8 @@ int main()
     //int read = testbench_write(&cxt, 1000000);
     //int read = testbench_read(&cxt, 1000000);
     //printf("Data read: %d\n", read);
-
+    megbyte_load_block_test(&cxt);
+    
     smi_unmap_cxt(&cxt);
     smi_unmap_udmabuf(&cxt);
 
