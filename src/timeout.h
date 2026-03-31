@@ -46,11 +46,11 @@ static inline int timeout_check_spin(smi_timeout_ns deadline, int spin, int hard
         
     } else if (spin > malleable_limit)
     {
-//        sched_yield();
+        sched_yield();
         return 1;
-    } else if (spin > hard_limit)
+    } else if (spin > hard_limit)  
     {
-//        sched_yield();
+        sched_yield();
         return 2;
     }
 
