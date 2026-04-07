@@ -4,9 +4,11 @@
 #include <pthread.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "smi.h"
 #include "errors.h"
+#include "dma.h"
 
 
 void sram_helloworld(SMI_CXT* cxt)
@@ -20,8 +22,8 @@ void sram_helloworld(SMI_CXT* cxt)
     cxt->intr = 0;
     cxt->intt = 0;
 
-    //uint32_t data32[] = {'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '!', '\0'};
-    uint32_t data32[] = {0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, '\0'};
+    uint32_t data32[] = {'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd', '!', '\0'};
+    //uint32_t data32[] = {0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, '\0'};
     //uint32_t clearData[] = {'\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'};
     
     printf("Writing\n");
@@ -68,6 +70,9 @@ int testbench_write(SMI_CXT* cxt, size_t len)
 
 long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
 {
+    volatile DMA_CS* dma_cs = (volatile DMA_CS*)  REG32((*cxt->dma_regs), DMAO_CS);
+    dma_cs->fields.reset = 1;
+
     cxt->rw_config->rconfig->rwidth = SMI_8_BITS;
     cxt->rw_config->wconfig->wformat = SMI_RGB565;
     /*
@@ -82,10 +87,25 @@ long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
     cxt->intr = 0;
     cxt->intt = 0;
 
+    DMA_CB* cb = (DMA_CB*)(cxt->dma_buffer->virt);
+
+    uint32_t* rxdata = (uint32_t*)(cb+2);
+
+    cb->dest_addr = MEM_BUS_ADDR((cxt->dma_buffer), rxdata);
+
+    cb->ti = 0;
+    cxt->rw_config->read_device_num = SMI_DEVICE1;
+    cxt->dma_config.reqr = 4;
+    cxt->pxldata = 1;
+    
+    smi_sync_context_device(cxt);
+    smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
+    int word_reads = SMI_DIV_CEIL((block_len * ratio.read), ratio.out_pixels);
+
     int count = 0;
     int val = 0;
     uint32_t ret[block_len];
-    
+    // uint32_t bounce[word_reads];
     uint32_t ret_single;
     size_t itr = len / block_len;
     struct timespec start, end;
@@ -93,7 +113,12 @@ long testbench_read(SMI_CXT* cxt, size_t len, int block_len)
 
     for(size_t i = 0; i < itr; i++)
     {
-        count += smi_programmed_read_arr(cxt, ret, 1, block_len);
+        //count += smi_programmed_read_arr(cxt, ret, 1, block_len);
+        count += smi_programmed_read_dma(cxt, cb, 1, block_len, 0);
+        // LOG("Starting to copy to bounce");
+        // memcpy(bounce, rxdata, word_reads * sizeof(uint32_t));
+        // LOG("Starting to unpack");
+        smi_unpack_rgb565_8(rxdata, ret, word_reads, ratio);
     }
 
     clock_gettime(CLOCK_MONOTONIC, &end);
@@ -130,7 +155,7 @@ void* cpu_load(void* args)
 
 
 #define TEST_ITERATIONS 5
-#define ITERATIONS 1048576
+#define ITERATIONS 1048576 
 #define DEVICE "RPI4"
 #define METHOD "SMI"
 #define WIDTH 8
@@ -148,7 +173,7 @@ void megbyte_load_block_test(SMI_CXT* cxt)
 
     long times[TEST_ITERATIONS];
 
-    for(int block = 8; block <= 1048576; block *= 2)
+    for(int block = 16384; block <= 1048576; block *= 2)
     {
         long total = 0;
         long time = 0;

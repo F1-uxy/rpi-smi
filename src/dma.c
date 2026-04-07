@@ -86,7 +86,12 @@ size_t dma_buffer_init(MEM_MAP* buff, int check, int clear)
 
     buff->size = read_sysfile_size(UDMABUF_SYS SIZE_FILE);
     buff->phys = read_sysfile_phys_addr(UDMABUF_SYS PHYS_ADDR);
-    buff->bus = buff->phys + 0xC0000000;
+    
+    #ifdef RPI3
+        buff->bus = buff->phys + 0xC0000000;
+    #else
+        buff->bus = buff->phys;
+    #endif
 
     if(check)
     {

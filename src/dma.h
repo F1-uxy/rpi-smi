@@ -52,7 +52,8 @@ typedef struct {
 
 #define DMA_N_REG(base, n) ((uintptr_t*)((char*)base + (n * 0x100)))
 
-#define DMA_BASE        0x3F007000
+#define DMA_OFFSET      0x007000
+#define DMA_BASE        (PHYS_REG_BASE + DMA_OFFSET)
 
 /*
  * DMA Control Block register

@@ -14,16 +14,16 @@
 #endif
 
 /* OS scheduling delay */
-#ifndef SPIN_MALLEABLE_LIMIT
-    #define SPIN_MALLEABLE_LIMIT 512
+#ifndef SPIN_YIELD_LIMIT
+    #define SPIN_YIELD_LIMIT 192
 #endif
 
 /* Hardware sleep waiting */
 #ifndef SPIN_SOFT_LIMIT
-    #define SPIN_SOFT_LIMIT 2048
+    #define SPIN_SOFT_LIMIT 512
 #endif
 
-#if SPIN_HARD_LIMIT >= SPIN_MALLEABLE_LIMIT
+#if SPIN_HARD_LIMIT >= SPIN_YIELD_LIMIT
     #error "SPIN_HARD_LIMIT must be less than SPIN_MALLEABLE_LIMIT"
 #endif
 
@@ -33,11 +33,11 @@
 
 
 #define DIRECT_READ_TIMEOUT_S 2
-#define PROG_READ_TIMEOUT_S 50
+#define PROG_READ_TIMEOUT_S 90
 
 #define DIRECT_WRITE_TIMEOUT_S 15
 #define PROG_WRITE_TIMEOUT_S 50
-#define DMA_WRITE_TIMEOUT_S 2
+#define DMA_WRITE_TIMEOUT_S 50
 
 /* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
