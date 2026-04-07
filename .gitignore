@@ -2,6 +2,7 @@
 build/*
 *.o
 deps/
+read.csv
 
 ##### Kernel Module Ignores #####
 smi-irq/build/
