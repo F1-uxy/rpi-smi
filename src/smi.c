@@ -235,13 +235,12 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
             continue;
         }
 
-        if(timeout_check_spin(deadline, spin, SPIN_HARD_LIMIT, SPIN_MALLEABLE_LIMIT, SPIN_SOFT_LIMIT) < 0)
+        if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
         {
             ERROR("Read await timeout reached");
             cs->fields.clear = 1;
             return -ETIMEDOUT;
         }
-
         spin++;
     }
 
@@ -289,16 +288,12 @@ int smi_read_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int le
         
         while (!dcs->fields.done)
         {
-            if(spin > 1024)
+            if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
             {
-                if(timeout_complete(deadline))
-                {
-                    ERROR("Direct read timeout");
-                    cs->fields.clear = 1;
-                    dcs->fields.done = 1;
-                    return -ETIMEDOUT;
-                }
-                spin = 0;
+                ERROR("Direct read await timeout reached");
+                cs->fields.clear = 1;
+                dcs->fields.done = 1;
+                return -ETIMEDOUT;
             }
             spin++;
         }
@@ -331,14 +326,13 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     cs->fields.pxldat = 0;
     cs->fields.pad = 0;
 
-    dsr->fields.rwidth = 0; /* 8bit read width */
-
+    dsr->fields.rwidth = 0;
     dcs->fields.done = 1;
 
     dcs->fields.write = 0;
 
     da->fields.addr = addr;
-    dd->value = 0; /* flush stale data */
+    dd->value = 0;
 
     dcs->fields.start = 1;
     
@@ -360,7 +354,7 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     dcs->fields.write = 0;
 
     da->fields.addr = addr;
-    dd->value = 0; /* flush stale data */
+    dd->value = 0;
 
     dcs->fields.start = 1;
     int count = smi_read_await_direct(cxt, ret_data, addr, len, increment);
@@ -456,31 +450,23 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
 
         while(!cs->fields.txd)
         {
-            if(spin > 1024)
+            if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
             {
-                if(timeout_complete(deadline))
-                {
-                    ERROR("Programmed write await timeout - TX is full");
-                    cs->fields.clear = 1;
-                    cs->fields.done = 1;
-                    return -ETIMEDOUT;
-                }
-                spin = 0;
+                ERROR("Write await timeout reached. Interface not receiving data");
+                cs->fields.clear = 1;
+                cs->fields.done = 1;
+                return -ETIMEDOUT;
             }
 
             spin++;
         }
         
-        if(spin > 1024)
+        if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
         {
-            if(timeout_complete(deadline))
-            {
-                ERROR("Programmed write await timeout");
-                cs->fields.clear = 1;
-                cs->fields.done = 1;
-                return -ETIMEDOUT;
-            }
-            spin = 0;
+            ERROR("Write await timeout reached. Data available but not readable");
+            cs->fields.clear = 1;
+            cs->fields.done = 1;
+            return -ETIMEDOUT;
         }
 
         if (cs->fields.aferr)
@@ -521,15 +507,12 @@ int smi_write_await_direct(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len, 
         
         while(!dcs->fields.done)
         {
-            if(spin > 1024)
+            if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
             {
-                if(timeout_complete(deadline))
-                {
-                    ERROR("Direct read array timeout");
-                    cs->fields.clear = 1;
-                    dcs->fields.done = 1;
-                    return -ETIMEDOUT;
-                }
+                ERROR("Direct write await timeout reached");
+                cs->fields.clear = 1;
+                dcs->fields.done = 1;
+                return -ETIMEDOUT;
             }
         }
 
@@ -622,21 +605,19 @@ int smi_dma_await(SMI_CXT* cxt)
     long delay = 1000;    
     smi_timeout_ns deadline;
     
+    int spin = 0;
     deadline = start_timeout(PROG_READ_TIMEOUT_S);
 
     while(!dma_cs->fields.end)
     {
-        if(timeout_complete(deadline))
+        if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
         {
-            ERROR("DMA transfer timeout");
+            ERROR("DMA await timeout reached");
             dma_cs->fields.abort = 1;
             return -ETIMEDOUT;
         }
 
-        struct timespec ts = {0, delay};
-        nanosleep(&ts, NULL);
-
-        if(delay < 100000) delay *= 2;
+        spin++;
     }
     
     return 1;
@@ -699,10 +680,19 @@ int smi_programmed_read_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int
     MEM_MAP* dma_regs = cxt->dma_regs;
     MEM_MAP* dma_buffer = cxt->dma_buffer;
 
+    smi_pack_ratio_t ratio = smi_packed_ratio(cxt);
+    int word_reads = SMI_DIV_CEIL((len * ratio.read), ratio.out_pixels);
+    
+    //if(word_reads > 4096)
+    //{
+    //    ERROR("DMA transfer length is greater than 16384. Consider splitting into multiple chained CBs");
+    //    return -1;
+    //}
+
     /* Required DMA CB flags */
     cb->ti = DMA_SRCE_DREQ | (DMA_SMI_DREQ << 16) | DMA_CB_DEST_INC | DMA_WAIT_RSP;
     cb->src_addr = REG_BUS_ADDR((*smi_regs), SMIO_D);
-    cb->tfr_len = SMI_DMA_L(len);
+    cb->tfr_len = SMI_DMA_L(word_reads);
 
     cb->next_cb = 0;
     cb->stride = 0;
@@ -736,6 +726,7 @@ void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_
 
     for(size_t i = 0; i < count; i++)
     {
+
         uint32_t word = raw[i];
         uint8_t b1 = (word >>  0) & 0xFF;
         uint8_t b0 = (word >>  8) & 0xFF;
@@ -798,7 +789,6 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ra
 void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
-    //printf("Swap Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
     for(size_t i = 0; i < count; i++)
     {
@@ -848,8 +838,6 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_
         uint32_t word = raw[i];
         smi_unpack_rgb565_9_word(word, word_buffer);
 
-        //printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
-
         dst[0] = word_buffer[0];
         dst[1] = word_buffer[1];
         dst[2] = word_buffer[2];
@@ -884,7 +872,6 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_
         uint32_t word = raw[i];
 
         smi_unpack_rgb565_9_word(word, word_buffer);
-        //printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
 
         dst[0] = word_buffer[1];
         dst[1] = word_buffer[0];

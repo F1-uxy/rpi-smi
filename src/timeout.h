@@ -2,6 +2,7 @@
 #define TIMEOUT_H
 
 #include <time.h>
+#include <sched.h>
 
 #if !defined(_POSIX_VERSION) || _POSIX_VERSION < 199309L
     #error "POSIX verison is insufficient for the required clock_gettime()"
@@ -30,15 +31,42 @@ static inline int timeout_complete(smi_timeout_ns deadline)
 }
 
 /*
- * Returns: 0 Still spining
- *          1 Yielded to the OS scheduler
- *          2 Issue CPU yield hint
- *         -1 Deadline exceeded             
+ * Returns: 0 = hard spin
+ *          1 = CPU yield hint
+ *          2 = sched_yield
+ *          3 = nanosleep             
  */
-static inline int timeout_check_spin(smi_timeout_ns deadline, int spin, int hard_limit, int malleable_limit, int soft_limit)
+static inline int timeout_spin_tier(int spin, int hard, int yield, int soft)
 {
-    if(spin > soft_limit)
+    if (spin < hard)        return 0;
+    if (spin < yield)       return 1;
+    if (spin < soft)        return 2;
+    return 3;
+}
+
+static inline bool timeout_apply(smi_timeout_ns deadline, int tier)
+{
+    switch (tier)
     {
+<<<<<<< HEAD
+    case 0:
+        break;
+    case 1:
+        __asm__ volatile("nop"   ::: "memory");
+        break;
+    case 2:
+        if(timeout_complete(deadline)) return true;
+        sched_yield();
+        break;
+    case 3:
+        if(timeout_complete(deadline)) return true;
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 }; 
+        nanosleep(&ts, NULL);
+        if(timeout_complete(deadline)) return true;
+        break;
+    default:
+        break;
+=======
         if(timeout_complete(deadline))
         {
             return -1;
@@ -52,9 +80,10 @@ static inline int timeout_check_spin(smi_timeout_ns deadline, int spin, int hard
     {
         sched_yield();
         return 2;
+>>>>>>> 4d10e0625b3fcbc6c84454e8364c77257195fb44
     }
 
-    return 0;
+    return false;
 }
 
 #endif
