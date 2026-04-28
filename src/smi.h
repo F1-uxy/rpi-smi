@@ -110,7 +110,7 @@ typedef struct {
                         txd    : 1,
                         rxf    : 1,
                         txe    : 1;
-} SMI_CS_BITFIELD;
+} SMI_CS_BITFIELD __attribute__((packed));
 
 typedef union {
     SMI_CS_BITFIELD fields;
