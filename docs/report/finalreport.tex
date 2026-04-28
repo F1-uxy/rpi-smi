@@ -146,6 +146,13 @@ While the hierarchical protection model is a well-established method for enforci
 % What a kernel module is
 Functionality is primarily loaded into the kernel at build time however, kernel modules allow functionality to be loaded and unloaded from the kernel on demand without rebooting the system, using tools such as \texttt{insmod} and \texttt{rmmod}. This flexibility makes kernel modules a practical platform for extending kernel functionality without modifying the kernel source. However, as kernel modules execute with full Ring 0 privileges, they carry the same security implications as built-in kernel code, making it desirable to keep any custom module as minimal as possible.
 
+\subsubsection{Physical, Bus \& Virtual Addressing}
+Modern operating systems abstract physical memory from user and kernel space processes through virtual addressing. Each process operates within its own isolated virtual address space, with the Memory Management Unit (MMU) transparently translating virtual addresses to physical addresses at runtime. The isolation prevents processes directly accessing hardware peripherals or other processes' memory regions.
+
+Physical addresses must be mapped into the virtual address space on Linux through \texttt{dev/mem}, which exposes the physical address space as a file that can be mapped using \texttt{mmap}, allowing peripheral registers to be accessed if they were ordinary memory.
+
+The BCM283x introduces a third address space - bus addresses. Bus addresses are the addresses as seen from the perspective of the System on Chip interconnect fabric rather than the CPU. Whilst physical and bus addresses refer to the same underlying memory, the BCM283x VideoCore MMU applies a fixed offset between the two spaces, meaning a physical and its corresponding bus address differ by a constant value. Bus addresses therefore represent the addresses that on-chip masters other than the CPU must use to correctly target a given memory address.
+
 \subsection{Hardware Interrupt Handling}
 % What hardware interrupts are
 % How they are exposed to user space
@@ -159,6 +166,7 @@ To bridge this gap, the kernel can expose interrupt events to user space through
 % What DMA is
 % Why normal transfers take up so much compute
 % How we can use DMA to make software fast and do compute while we wait for it
+Naive memory transfers must be managed by the CPU, consuming processor cycles and preventing the concurrent execution of other tasks. In a system where multiple processes are active at the time of a transfer, the transfer speed will reduce due to resources being shared amongst the other processes. Rather than occupying the CPU for the duration of the transfer, a DMA controller manages the movement of data independently, notifying the CPU via an interrupt upon completion. The decoupling of transfers from the CPU execution is particularly valuable in high throughput applications, where the cost of CPU-managed transfers would otherwise become the primary bottleneck.
 
 
 \subsection{Raspberry Pi Secondary Memory Interface (SMI)}
@@ -177,22 +185,223 @@ While industry implementations are seldom publicly documented, open-source examp
 A more complete, though still application specific, implementation can be found in the CaribouLite project~\cite{CariboulabsCariboulite2026}, an open-source SDR HAT for the Raspberry Pi. Rather than direct register manipulation, CaribouLite introduces \textit{smi\_stream\_dev}, a custom kernel module that layers a cyclic DMA mechanism and software FIFO over the SMI hardware, exposing it as a standard character device. Despite this approach's greater sophistication, and its notably elegant polling mechanism, the implementation remains application specific and does not constitute a general purpose SMI API.
 
 \subsection{Dual Port SRAM}
-% Optional if there is space
+Static Random Access Memory (SRAM) is a high-speed volatile random access memory type. Unlike Dynamic Random Access Memory (DRAM), which stores data using capacitors, SRAM is a semiconductor based implementation using flip-flop logic to store data. Therefore, SRAM is favoured in smaller cache memory due to its high cost and high speed, whereas DRAM is primarily used for a system main memory.
 
-\subsection{API Design}
+The interface through which a memory device interacts is accessed is referred to as a port. Single-port SRAM permits only one read or write operation at any given time, which is sufficient for architectures with a single bus master. In a shared memory architecture arbitration logic is required to maintain concurrent access between multiple devices. Dual-port SRAM addresses this by providing two independent interfaces to a single address space, with integrated arbitration logic to handle simultaneous access, making it well suited to shared memory architectures despite its high cost.
+
+\subsection{Application Programming Interface (API) Design}
+An Application Programming Interface (API) defines the boundary between a software component and its users, specifying the operations available and valid inputs \& outputs. While any functional interface technically constitutes as an API, the design of that interface has significant implications for usability, safety, maintainability and performance. A well designed API abstracts the complexity of the underlying system while exposing expansive functionality, allowing users to interact with hardware or software components without knowledge of the internal implementation.
+
+\subsubsection{Defensive vs Contract API}
+The two main philosophical approaches when designing an API are contract-based and defensive designs. Contract-based APIs make explicit promises about behaviour given valid inputs and places responsibility on the user to meet preconditions; resulting in a faster and leaner yet unforgiving API\@. A defensive API validates inputs and handles errors gracefully regardless of caller behaviour which requires a bulkier design due to additional input validation before a critical path is executed. For a hardware API the selection of philosophy is particularly consequential; an overly defensive design adds latency to every call, whilst an overly contract-based design leaves hardware state vulnerable to misuse~\cite{khlebnikovContractsUndefinedBehavior}. The appropriate balance between these approaches in the context of SMI API is discussed in the implementation chapter.
+
+\subsubsection{Hardware APIs}
+When designing a hardware API, extra caution is required as mistakes can corrupt state in ways that are difficult to recover from, unlike software exceptions which can be caught and handled gracefully. Hardware APIs are also bound by timing constraints, meaning inefficient designs can consume valuable resources or violate the timing requirements of the underlying hardware, producing undefined behaviour. 
 
 \subsection{Shared Memory Architecture}
+% Shared bus memory
+% Dual port memory
+Shared memory is a communication paradigm in which multiple nodes share a single common shared physical memory space~\cite{hennessyComputerArchitectureQuantitative2012}. This design allows for fast data transfers and low-latency inter-process communication~\cite{tanenbaumInterprocessCommunication2015a} without the overhead of explicit message passing or serialisation. Unlike message passing, where data must be copied across address spaces and formatted for transmission, shared memory allows a producer to write directly to a region that a consumer can read immediately, minimising latency and maximising throughput.
 
-\subsection{Synchronisation}
-% Optional if there is space
+Shared memory architectures can be realised at different levels of the system stack. At the software level, the operating system provides mechanisms, such as POSIX shared memory, allowing processes on the same machine to share common address spaces. At the hardware level, physically shared memory devices such as dual-port SRAM extend this concept to independent processes on separate buses, providing deterministic low-latency communication without OS involvement.
+
+A fundamental challenge of shared memory system is determining which system has logical ownership of a given address space at any point in time. Whilst hardware arbitration exists and handles bus level arbitration, preventing simultaneous electrical access to the same address, it provides no higher-level guarantee about the validity or readiness of the data it contains. A common solution is to reserve a region of the shared memory for ownership and flags or semaphores, which devices write to signal data is ready and ownership has transferred to the consuming device~\cite{tanenbaumInterprocessCommunication2015b}. The specific design ownership mechanism adopted in this project is outlined in the methodology.
+
+\section{Methodology}
+% How I approached the problem
+% Decisions and reasoning 
+% Maybe test bench section
+
+\subsection{Work Process Overview}
+% Development approach
+% How problem broken down
+% Key design decisions
+This project's development process followed an iterative, prototype-driven approach, beginning with the software layer before introducing the hardware complexity. Given the limited and fragmented documentation surrounding the SMI, development began with a knowledge-building phase, consolidating available sources and reverse engineering register behaviour to establish an understanding of the interface. To build the documentation an initial prototype was built with supporting tooling, which served to validate that understanding in practice. Once functionality was validated, development progressed to the design and implementation of the SMI API, abstracting the low-level SMI behaviour into a reusable interface. The final stage integrated this software stack with the full hardware system, applying the API to the shared memory use case. 
+
+\subsection{Software Environment}
+% Tools and dependencies used in context
+Although the SMI driver is designed to be standalone, not requiring third-party libraries, some external dependencies were used to address challenges outside the core scope of the project.
+
+\subsubsection{u-dma-buf}
+A fundamental challenge of user-space DMA is cache coherency; the CPU and DMA controller hold independent views of memory and without explicit coherency guarantees, data written by one may not be visible to the other subsequently producing undefined behaviour. The CPU caches frequently accessed memory in L1/L2 cache to avoid slow main memory accesses whereas the DMA controller bypasses the cache entirely. When the CPU writes data, it may remain in the cache and not be flushed to main memory immediately hence the DMA controller may read stale data that the CPU has not flushed yet. Equally, the DMA controller may write data to the main memory which may not be visible to the CPU if it holds a cached copy of that address range. u-dma-buf~\cite{ichiroIkwzmUdmabuf2026} is a kernel module that allocates physically contiguous, cache-coherent memory regions and exposes them to user space via a device file, resolving this issue without requiring a custom kernel module.
+
+The SMI driver is designed to accept a DMA buffer address directly, decoupling it from any specific allocation mechanism, a flexibility that aligns with the open-source nature of the project. Therefore, u-dma-buf is not a hard dependency; any cache-coherent physically contiguous buffer is sufficient. However, u-dma-buf was chosen as it provides the most straightforward means of obtaining such a buffer in user space and is used consistently throughout development for this reason.
+A fully featured DMA library was considered, but such libraries typically abstract buffer management in a way that conflicts with the driver's design of accepting a raw buffer address. Additionally, the SMI driver requires simple DMA controller functionality and would not take full advantage of an external DMA library. u-dma-buf was preferred as it resolves the allocation and coherency problem while remaining transparent to the driver.
+
+\subsubsection{Build Configuration}
+The driver is built using the GNU Compiler Collection (GCC) with a provided Makefile, compiled against the C11 standard with POSIX extensions enabled via \texttt{D\_POSIX\-\_C\_SOURCE=199309L}. The highest level of compiler optimisations were enabled via \texttt{-O3} and \texttt{-march=native}, allowing the compiler to take full advantage of the native instruction set of the target platform. All levels of optimisation were tested however, \texttt{O3} was chosen to remove any computational bottleneck and allow a full evaluation of the interface.
+
+A set of driver-specific preprocessor directives are passed via \texttt{SMIFLAGS}. Most notably the Pi model flag (e.g. \texttt{-DPI3} or \texttt{-DPI4}) is a required build argument that determines the physical base address, which differs between Raspberry Pi models. Omitting this flag will produce a compile-time error. Optional flags include \texttt{-DSMI\_VERBOSE} to enable diagnostic logic and \texttt{-DSMI\_COLOURFULL\_ERRORS} to enable colour-coded error output, both of which are useful during development and debugging but can be omitted for production builds.
+
+The Makefile separates source files into driver modules and application code, compiling each unit independently into a dedicated build directory before linking.
+
+\subsection{Secondary Memory Interface Modes}
+% Explain each SMI mode
+% Which modes were used
+The Secondary Memory Interface (SMI) has a wide range of configurations, notably multiple bus widths, offering 8, 9, 16 and 18-bit modes, each with implications for throughput and hardware compatibility. Each mode was tested in isolation and evaluated against the constraints of the system, namely the interface width of the dual-port SRAM\@. An 8-bit bus width was chosen due to the byte-addressable SRAM used in the final design. The selected bus width additionally has implications for how data is represented in memory, which is addressed in the implementation chapter.
+
+\subsection{System Design}
+% Describe the overall architecture
+% How each component connects to each other
+Figure~\ref{system_architecture} outlines the shared memory architecture implemented. The system contains two Raspberry Pi single board computers interfacing directly to a dual port SRAM shared memory via the SMI interface. To expand the address space available, dedicated loadable page address registers were also implemented to occupy the upper byte of the address with the lower 6 bits coming from the dedicated SMI address bus. As the page address registers are asynchronous to the SMI address bus, crossing a page boundary will add latency to read/write accesses during operation. Memory ownership is managed via a reserved flag region in the SRAM that signals data readiness and transfers logical ownership between devices.
+
+\subsection{Hardware Setup}
+% Physical wiring
+% Any PCBs used or created
+Prototyping was completed on a breadboard due to their simplicity and ease of rapid prototyping. During testing issues with signal integrity on breadboards imposed constraints on the timing configuration however, the setup provided a proof of concept that could be used for SMI debugging. These issues were addressed during the final implementation with all components being soldered to individual printed circuit boards (PCBs). Jumper wires were used to interconnect the PCB modules which maintained modularity and simplified debugging. The page address registers used Texas Instruments 74HC193 4-bit counters for their asynchronous incrementing and load operations.
+
+\subsection{Benchmark Environment}
+% Optional? If there is enough content to justify it
+
+\section{Implementation}
+% What was actually built
+% Software implementation & hardware implementation sections
+% API design etc...
+The hardware implementation consisted of simple breakout boards for the SRAM and page address registers, with decoupling capacitors to stabilise the supply voltage. The primary implementation complexity therefore lies in the software layer.
+
+\subsection{SMI Hardware}
+Figure~\ref{smi_block_diagram} illustrates the internal architecture of the SMI hardware. At its core, two asynchronous FIFOs ($64 \times 32$-bit) bridge the AXI clock domain and the SMI clock domain, decoupling the system bus from a slower peripheral clock. Write data from the AXI slave is pushed into the transmit (TX) FIFO and then drained on to the SMI data bus, whilst incoming data from the SMI bus is captured into the receive (RX) FIFO and read back up via the AXI slave. The data format block handles the bus width configuration (8, 9, 16 and 18-bits) and the RX packing which allows received data to be packed into 16-bit RGB565 or 32-bit XRGB format furthermore, the data format block can swap the received word's bit order. External DMA requests may be passed through the top two bits of the data bus as paced by the DMA control block. The Transfer Timing Mode Select block generates external bus control signals such as the read and write strobe \texttt{SOE\_N/SE} and \texttt{SWE\_N/SRW\_N}, which are physical signals used to trigger read and write operations on the connected peripheral. The interrupt control block monitors FIFO status and asserts relevant interrupt signal \texttt{o\_smi\_int} such as transfer completion or FIFO level threshold events. The 6-bit address bus \texttt{o\_smi\_addr} carries the device address to the external peripheral however, it can be repurposed as a general-purpose parallel output.
+
+On the BCM283x, all peripherals are controlled through memory-mapped registers residing at fixed physical addresses within the peripheral address space. An example register can be seen in Table~\ref{dcs_register}. 
+
+The SMI can be programmed to carry out a sequence of transfers to a given address ahead of time (programmed transfer) or can be completed individually (direct transfer). Direct transfers are controlled via the direct control registers: Direct Control and Status \texttt{DCS}, Direct Address \texttt{DA} and Direct Data \texttt{DD}. Programmed transfers are controlled via the SMI registers: Control and Status \texttt{CS}, Length \texttt{L}, Address \texttt{A} and Data \texttt{D}. Programmed transfers can also be paced via DMA, controlled by the SMI DMA Control \texttt{DC} register. There are four SMI device settings that can be stored by Device Read Settings \texttt{DSR} and Device Write Settings \texttt{DSW} registers which are then selected at transfer configuration time in the \texttt{A} and \texttt{DA} registers.
+
+\subsection{Software Implementation}
+Figure~\ref{software_architecture} shows layered architecture of the software implementation, built from the ground up, exposing a general-purpose API to the end user. Each layer is designed to be as thin as possible, delegating complexity upwards and maintaining a clear separation of concerns. Whilst the top-level SMI API is intended for general use, the underlying layers are independently accessible, allowing users to bypass higher-level abstractions and build custom functionality directly on top of the lower layers if required. This modularity is a deliberate design principle, consistent with the open-source nature of the project. All code was written in C, consistent with the system programming requirements of the project and the language conventions of the Linux kernel ecosystem.
+
+\subsection{SMI Kernel Module}
+The SMI kernel module is an optional module that exposes the SMI's hardware interrupt to user-space via 
+
+\subsection{SMI Driver}
+The SMI driver is the lowest level of implementation that interacts with the SMI registers. Functionality is split into modules, each accompanied by a matching header file, separating the public interface from the internal implementation. Whilst both the low-level driver functionality and high-level API are implemented within \texttt{smi.c}, they are discussed separately to reflect their distinct roles in the software architecture.
+
+\subsubsection{SMI Context Struct}
+Rather than relying on global state, all register mappings, device configurations and buffer references are encapsulated within a context structure \texttt{SMI\_CXT}, allowing multiple independent instances to coexist and making the driver's dependencies explicit at every call site. Context structs can be initialised and refreshed using helper functions such as \texttt{smi\_init\_\-cxt\_\-map} to map peripheral registers and \texttt{smi\_sync\_\-context\_\-device} to synchronise the device timing configuration with the current context state.
+
+\subsubsection{Register Representation}
+All registers can be represented as 32-bit unsigned integers however, raw integer manipulation requires complex bit-masking and shifting that obscures the intent of each operation. SMI registers are therefore represented using a union of a named bitfield struct and a raw \texttt{uint32\_t}, allowing registers to be accessed by name whilst retaining the ability to read or write the entire register atomically. 
+
+Bitfield layout is not guaranteed by the C specification and is left to compiler discretion, making bitfield-based register representation non-portable in the general case. However, as the driver is specifically targeting BCM283x processors, the GNU Compiler Collection (GCC) is the de facto compiler for this platform. Under GCC on ARM, bitfield ordering is well defined and consistent, making this a safe and pragmatic design choice within the constraints of the system.
+
+Each bitfield member is declared \texttt{volatile} to prevent the compiler from optimising away hardware register accesses, ensuring every read and write produces an actual memory transaction. The bitfield struct is declared with \texttt{\_\_attribute\_\_((packed))} to prevent the compiler inserting padding between members during optimisation, ensuring the in-memory layout corresponds exactly to the hardware register specifications. Furthermore, registers are aligned to 4-byte boundary using \\ \texttt{\_\_attribute\_\_((aligned(4)))}, ensuring that register accesses are never split across word boundaries, which would produce undefined hardware behaviour on the BCM283x memory bus.
+
+\subsubsection{Transfer Modes}
+The driver exposes two transfer modes: direct transfers, which execute a single read or write operation immediately via the \texttt{DCS}, \texttt{DA} and \texttt{DD} registers, and programmed transfers, which configure the SMI to execute a sequence of transfers to a given address via the \texttt{CS}, \texttt{A}, \texttt{D} registers. Each mode is exposed through single and array variants, for example \texttt{smi\_direct\_read} and \texttt{smi\_direct\_read\_arr}, providing a consistent interface regardless of transfer length. Each transfer mode is paired with a corresponding await function, such as \texttt{smi\_read\_await} and \texttt{smi\_read\_await\_direct}, which block until the transfer completes.
+
+% During implementation of the transfer functions, the \texttt{CS} register status flags were found to be inconsistent with the documentation~\cite{zotero-item-12}. Specifically the RX and TX flag names are swapped; \texttt{rxd} in the documentation describes the RX FIFO data availability, whist the \texttt{txd} describes the TX FIFO data availability
+
+
+\subsubsection{Timeout Handling}
+To handle variable hardware latency without wasting processor cycles unnecessarily, await functions employ a tiered spin strategy. The system progressively trades responsiveness for CPU efficiency as the wait grows longer. This approach ensures high-performance, low-latency communication for fast operations while minimising CPU utilisation during extended stalls. The waiting logic transitions through four distinct tiers based on the incrementing spin counter.
+
+\begin{itemize}
+    \item \textbf{Tier 0 (Active Polling):} A phase designed for minimal latencies. By continuously polling the hardware state, the CPU pipeline remains hot, ensuring the lowest possible latency upon state transition.
+    \item \textbf{Tier 1 (Execution Hint):} The insertion of a \texttt{NOP} instruction with a compiler memory barrier prevents load/store reordering around the spin loop without surrendering the thread's scheduler quantum.
+    \item \textbf{Tier 2 (Process Yielding):} Utilisation of the \texttt{sched\_yield} system call. This instructs the OS scheduler to move the thread to the end of the run queue for its current priority level, allowing other tasks to execute while remaining runnable.
+    \item \textbf{Tier 3 (Blocked Sleep):} For extended delays, the driver invokes the POSIX \texttt{nanosleep} interface (defined in \texttt{time.h}). This blocks the calling thread, fully releasing the CPU core to the kernel until the specified interval elapses.
+\end{itemize}
+
+The thresholds governing tier transitions are compile-time configurable via preprocessor definitions, allowing the spin behaviour to be tuned for different hardware characteristics without modifying the driver logic. The tier transitions were determined empirically by profiling transfer completion spin counts across a range of operating conditions. Measurements were taken both idle and loaded system conditions to characterise the boundary between hardware latency and OS scheduling jitter.
+
+\subsubsection{DMA Transfers}
+Without DMA, the CPU must manage all data transfers directly, polling the SMI FIFO and writing or reading word by word. This is a resource-intensive operation that competes with other processes on the scheduler. Offloading transfers to the dedicated to the dedicated DMA controller frees the CPU during the transfer, which is particularly beneficial under a busy scheduler.
+
+A DMA transfer is described via a Control Block specifying the source address, destination address and transfer length, along with pacing configuration. The SMI is enabled for DMA operation via the \texttt{DC} register, which configures the DREQ threshold for both read and write directions. A cache-coherent buffer is allocated via u-dma-buf and tracked within \texttt{SMI\_CXT}, providing a memory region accessible by both the CPU and DMA controller without coherency issues. For write transfers, the Control Block source is set to the buffer's bus address and the decision to the bus address of the SMI \texttt{D} register. For read transfers these are inverted, with the \texttt{D} register as the source and the cache-coherent buffer as the destination.
+
+\subsubsection{Packing \& Unpacking}
+The SMI FIFO interfaces with the AXI bus which operates on 32-bit words regardless of the configured SMI bus width. As a result, all data passing through the FIFO is padded to 32-bit width, meaning an 8-bit transfer consumes a full 32-bit FIFO entry. To mitigate this inefficiency, the SMI hardware supports optional packing modes which consolidate multiple bus-width samples into a single 32-bit FIFO entry. Data may be packed into either 16-bit RGB565 or 32-bit XRGB format, as illustrated in Figure~\ref{8_bit_pack}, reducing the number of memory transfers required by up to $4\times$ in the case of 8-bit RGB565 packing and significantly improving transfer throughput.
+
+When packing is not enabled, received words are truncated to the configured bus width via the \texttt{smi\_truncate} family of functions, discarding the unused upper bits of each 32-bit word. When packing is enabled, the more complex unpacking process is required to reconstruct the original samples from the consolidated FIFO words.
+
+Unpacking function selection is managed through the \texttt{SMI\_CXT} context, which dispatches the appropriate unpacking function based on the configured bus width and pixel format. Each bus width and format combination has a dedicated unpacking function, with performance-critical word-level operations implemented as \texttt{static inline} functions to eliminate function call overhead in the hot path. Lookup tables were considered for unpacking but disregarded due to the limited L1 cache available on BCM283x processors; cache misses on a lookup table would incur greater latency than the equivalent branch instructions, justifying the trade-off of code readability for performance. The SMI also has the ability to swap the bit order FIFO words to support little-endian peripherals. Dedicated swap variants are provided for each unpacking function to handle this configuration.
+
+% During implementation, the 18-bit RGB565 and XRGB unpacking swap variant modes were found to produce data with an unexpected bit order that could not be reconciled with the available documentation. Whilst non-swapped variants were successfully implemented, the correct unpacking scheme for 18-bit swap packed data could not be definitively determined. This remains an open limitation of the current implementation and is discussed further in the conclusion.
+
+\subsection{API Design}
+The API layer is built directly on top of the SMI driver, exposing a general-purpose interface for SMI communication. A deliberate distinction is made between the public-facing API and internal worker functions in terms of input validation and philosophy. 
+
+
+% The two principle philosophises when designing an API are defensive and contract-based design. A defensive API pre-empts potential failures through input validation and error handling, producing meaningful error codes on failure regardless of caller behaviour. A contract-based API instead requires the caller to satisfy a set of preconditions before invoking a function, with the function guaranteeing a set of postconditions in return. This approach assumes the caller obeys the contract, places responsibility on the caller rather than the function. Both approaches have valid use cases; however, defensive APIs are often criticises for increasing code complexity and introducing runtime overhead that is particularly undesirable in performance-critical paths~\cite{khlebnikovContractsUndefinedBehavior}.
+
+\subsubsection{API Implementation}
+Both defensive and contract-based design present trade-offs that are particularly consequential for a hardware API. The SMI API adopts a hybrid approach, applying each philosophy where it is most appropriate within the software architecture. Public-facing interfaces such as \texttt{smi\_direct\_read} and \texttt{smi\_programmed\_read} adopt defensive design, validating inputs and returning error codes on failure to ensure safe usage at the API boundary. Internal worker functions, including the await and unpacking routines, adopt contract-based design, assuming valid inputs as a precondition and eliminating redundant validation from performance-critical paths. The hybrid approach ensures safety at the public interface without compromising the performance of internal transfer and unpacking operations. Furthermore, the open-source nature of the driver encourages users to build their own abstractions directly on top of the lower-level interfaces, leveraging the contract-based internals where performance is a priority.
+
+\subsection{SMI Lite}
+\texttt{smilite.h} is a single-header implementation of the SMI driver designed for users who require a lightweight integration path without the overhead of the fill multi-file driver. Single-header libraries are a common pattern in C development, allowing entire implementation to be included into a project by adding a single \texttt{\#include} directive, eliminating the need for a separate compilation step or build system integration.
+
+\texttt{smilite.h} includes the complete register definitions, memory mappings utilities, address translation macros, timeout handle, await routines and the full suite of unpacking and truncation functions. However, it deliberately omits the higher-level initialisation helpers such as \texttt{smi\_init\_cxt\_map} and \texttt{smi\_init\_rw\_config}, leaving peripheral setup and context initialisation to the user. The user must also define system specific macros, most notably \texttt{PHYS\_REG\_BASE} which specifies the physical register address base which differs across BCM283x variants, enforced at compile time via a preprocessor error. These requirements makes the platform dependencies explicit rather than silently assuming a specific hardware configuration, improving portability across BCM283x variants.
+
+\subsection{Shared Memory Implementation}
+
+\section{Results and Evaluation}
+
+\section{Conclusion and Future Work}
 
 \bibliography{reportbib}
 
 \appendix
 \clearpage
 
+\section{Figures}
+
+\begin{cmpfigure}[htb]{SMI Architecture Block Diagram\label{smi_block_diagram}}
+    \includegraphics[width=1\textwidth]{img/smi-block-diagram.jpg}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{System Architecture\label{system_architecture}}
+    \includegraphics[width=1\textwidth]{img/rpismi-arch.png}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{Software Architecture\label{software_architecture}}
+    \includegraphics[width=1\textwidth]{img/rpismi_softarch.png}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{8-bit Interface Packing~\cite{zotero-item-12}\label{8_bit_pack}}
+    \includegraphics[width=1\textwidth]{img/8-bit-pack.png}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{Raspberry Pi 3B+ SMI Throughput Mb/s~\label{3b_throughput_mbs}}
+    \includegraphics[width=1\textwidth]{img/rpi3b-smi-throughput-mbs.pdf}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{Raspberry Pi 3B+ SMI Throughput MT/s~\label{3b_throughput_mts}}
+    \includegraphics[width=1\textwidth]{img/rpi3b-smi-throughput-mts.pdf}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{Raspberry Pi 4 SMI Throughput Mb/s~\label{4b_throughput_mbs}}
+    \includegraphics[width=1\textwidth]{img/rpi4-smi-throughput-mbs.pdf}
+\end{cmpfigure}
+
+\begin{cmpfigure}[htb]{Raspberry Pi 4 SMI Throughput MT/s~\label{4b_throughput_mts}}
+    \includegraphics[width=1\textwidth]{img/rpi4-smi-throughput-mts.pdf}
+\end{cmpfigure}
+
+
+\section{Tables}
+
+\begin{table}[h]
+\centering
+\label{tab:smi_dcs}
+\begin{tabular}{|c|l|p{7cm}|c|c|}
+\hline
+\textbf{Bit(s)} & \textbf{Field} & \textbf{Description} & \textbf{Type} & \textbf{Reset} \\
+\hline
+31--4 & --- & Unused & - & - \\
+\hline
+3 & WRITE & Transfer Direction. 0 = Read from external device. 1 = Write to external device. & R/W & 0 \\
+\hline
+2 & DONE & Direct Transfer Complete. 0 = No meaning. 1 = Transfer has finished. Writing 1 clears this flag. & R/W & 0 \\
+\hline
+1 & START & Start Transfer. Writing 1 starts a transfer if one is not already in progress. & W & 0 \\
+\hline
+0 & ENABLE & Enable the SMI. OR'd with the ENABLE bit in SMI\_CS. 0 = Disable (power-saving state). 1 = Enable. & R/W & 0 \\
+\hline
+\end{tabular}
+\caption{SMI Direct Control and Status Register (DCS)\label{dcs_register}}
+\end{table}
+
 \clearpage
-\section{Gantt chart} \label{ApB}
+\section{Gantt chart}\label{ApB}
 
 
 \end{document}

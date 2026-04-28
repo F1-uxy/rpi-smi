@@ -1,5 +1,13 @@
 ### Topics:
 
+#### Midway Feelings:
+<ul>
+    <li> Implementation section could do with more anecdotal reasoning to why something was chose and why something wasn't chosen
+    <li> Redo the bullet point section into a paragraph and talk more about why I chose the tiered system.
+    <li> Expand on the lookup table section
+    <li> Write more about why instead of just what
+</ul>
+
 #### Current Documentation:
 <ul>
     <li> Current kernel driver is lackluster. Only supports 8 & 16 bit modes. Only uses 1 device bank. Doesn't implement specific packing modes or provide unpacking functionality.
@@ -11,6 +19,7 @@
     <li> Defensive API vs Contract Based API
     <li> Context structs
     <li> Fast word extraction - branchless hot path - LUT vs branches
+    <li> aligned(32) vs aligned(4)
 </ul>
 
 #### SMI Modes:
