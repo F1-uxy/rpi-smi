@@ -48,7 +48,6 @@ static inline bool timeout_apply(smi_timeout_ns deadline, int tier)
 {
     switch (tier)
     {
-<<<<<<< HEAD
     case 0:
         break;
     case 1:
@@ -66,21 +65,6 @@ static inline bool timeout_apply(smi_timeout_ns deadline, int tier)
         break;
     default:
         break;
-=======
-        if(timeout_complete(deadline))
-        {
-            return -1;
-        }
-        
-    } else if (spin > malleable_limit)
-    {
-        sched_yield();
-        return 1;
-    } else if (spin > hard_limit)  
-    {
-        sched_yield();
-        return 2;
->>>>>>> 4d10e0625b3fcbc6c84454e8364c77257195fb44
     }
 
     return false;
