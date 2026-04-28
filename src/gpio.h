@@ -33,6 +33,9 @@ typedef struct {
     void* phys;
 } MEM_MAP;
 
+#define SMI_PACKED __attribute__((packed))
+#define SMI_ALIGNED __attribute__ ((aligned(4)))
+
 #define REG32(m, x) ((volatile uint32_t*) ((uintptr_t)(m.virt)+(uintptr_t)(x)))
 #define REG32_BUS(m, x) ((volatile uint32_t*) ((uintptr_t)(m.bus))  + (uint32_t)(x))
 
@@ -98,18 +101,5 @@ uint8_t gpio_read(MEM_MAP gpio_regs, int pin);
 void disp_mode_pins(uint32_t mode);
 
 int gpio_test(MEM_MAP gpio_regs, int pin);
-
-
-#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)  \
-  ((byte) & 0x80 ? '1' : '0'), \
-  ((byte) & 0x40 ? '1' : '0'), \
-  ((byte) & 0x20 ? '1' : '0'), \
-  ((byte) & 0x10 ? '1' : '0'), \
-  ((byte) & 0x08 ? '1' : '0'), \
-  ((byte) & 0x04 ? '1' : '0'), \
-  ((byte) & 0x02 ? '1' : '0'), \
-  ((byte) & 0x01 ? '1' : '0') 
-
 
 #endif

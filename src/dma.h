@@ -40,7 +40,7 @@ typedef struct {
              next_cb,   // Next control block
              debug,     // Debug register
              unused;
-} DMA_CB __attribute__ ((aligned(32)));
+} DMA_CB SMI_ALIGNED;
 
 #define DMA_WAIT_RSP        (1<<3)
 #define DMA_CB_DEST_INC     (1<<4)
@@ -102,13 +102,13 @@ typedef struct
                         disdebug        : 1,
                         abort           : 1,
                         reset           : 1;
-} DMA_CS_BITFIELD;
+} DMA_CS_BITFIELD SMI_PACKED;
 
 typedef union
 {
     DMA_CS_BITFIELD fields;
     volatile uint32_t value;
-} DMA_CS __attribute__((aligned(32)));
+} DMA_CS SMI_ALIGNED;
 
 #define CS_CR                   (1 << 31)   /* DMA Channel Reset */
 #define CS_ABORT                (1 << 30)
@@ -135,7 +135,7 @@ typedef union
 {
     DMA_CONBLK_AD_BITFIELD fields;
     volatile uint32_t value;
-} DMA_CONBLK_AD __attribute__((aligned(32)));
+} DMA_CONBLK_AD SMI_ALIGNED;
 
 /* DMA Debug Register */
 
@@ -151,13 +151,13 @@ typedef struct
                         version         : 3,
                         lite            : 1,
                         _x2             : 3;
-} DMA_DEBUG_BITFIELD;
+} DMA_DEBUG_BITFIELD SMI_PACKED;
 
 typedef union
 {
     DMA_DEBUG_BITFIELD fields;
     volatile uint32_t value;
-} DMA_DEBUG __attribute__((aligned(32)));
+} DMA_DEBUG SMI_ALIGNED;
 
 #define DMA_DEBUG(cs)		((c * 0x100) + 0x20)
 #define DB_LITE			    (1 << 28)

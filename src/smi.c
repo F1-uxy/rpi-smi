@@ -14,7 +14,7 @@
 #include "timeout.h"
 
 
-void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs)
+int smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs)
 {
     /* Map GPIO regs */
     map_segment(gpio_regs, GPIO_BASE, PAGE_SIZE);
@@ -37,13 +37,15 @@ void smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MA
     if(!cxt->raw_buffer.buf)
     {
         ERROR("Raw buffer allocation failed");
-        exit(1);
+        return SMI_ERR_ALLOC_FAIL;
     }
 
     cxt->smi_regs  = smi_regs;
     cxt->clk_regs  = clk_regs;
     cxt->gpio_regs = gpio_regs;
     cxt->dma_regs  = dma_regs;
+
+    return SMI_OK;
 }
 
 void smi_unmap_cxt(SMI_CXT* cxt)
@@ -59,6 +61,27 @@ void smi_unmap_cxt(SMI_CXT* cxt)
     }
 
     cxt->raw_buffer.size = 0;
+}
+
+int smi_resize_raw_buffer(SMI_CXT* cxt, size_t len)
+{
+    if(len <= 0)
+    {
+        ERROR("Tried to realloc to size 0, returning original buffer");
+        return SMI_ERR_BUF_TO_SMALL;
+    }
+
+    uint32_t* new_buf = realloc(cxt->raw_buffer.buf, len * sizeof(uint32_t));
+    if(!new_buf)
+    {
+        ERROR("Reallocation of raw buffer failed");
+        return SMI_ERR_ALLOC_FAIL;
+    }
+
+    cxt->raw_buffer.buf = new_buf;
+    cxt->raw_buffer.size = len;
+
+    return SMI_OK;
 }
 
 void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig, int read_device, int write_device)
@@ -80,9 +103,9 @@ int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer)
     {
         if (fd_sync_cpu >= 0) close(fd_sync_cpu);
         if (fd_sync_dev >= 0) close(fd_sync_dev);
-        ERROR("Could not open u-dma-buf sync");
         
-        return -1;
+        ERROR("Could not open u-dma-buf sync");
+        return SMI_ERR_FILE_IO_FAIL;
     }
 
     dma_buffer_init(dma_buffer, 1, 1);
@@ -91,7 +114,7 @@ int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer)
     cxt->fd_sync_cpu = fd_sync_cpu;
     cxt->dma_buffer = dma_buffer;
 
-    return 0;
+    return SMI_OK;
 }
 
 void smi_unmap_udmabuf(SMI_CXT* cxt)
@@ -127,12 +150,12 @@ void smi_sync_context_device(SMI_CXT* cxt)
     smi_configure_read_device(cxt, cxt->rw_config->read_device_num);
 }
 
-void smi_configure_read_device(SMI_CXT* cxt, uint8_t n)
+int smi_configure_read_device(SMI_CXT* cxt, uint8_t n)
 {
     if(n > 3)
     {
         ERROR("Device number out of range");
-        return;
+        return SMI_ERR_INVALID_DEVICE;
     }
 
     volatile SMI_DSR* dsr = (volatile SMI_DSR*) REG32((*cxt->smi_regs), SMIO_DSR(n));
@@ -148,12 +171,12 @@ void smi_configure_read_device(SMI_CXT* cxt, uint8_t n)
     dsr->fields.rwidth = cxt->rw_config->rconfig[n].rwidth;
 }
 
-void smi_configure_write_device(SMI_CXT* cxt, uint8_t n)
+int smi_configure_write_device(SMI_CXT* cxt, uint8_t n)
 {
     if(n > 3)
     {
         ERROR("Device number out of range");
-        return;
+        return SMI_ERR_INVALID_DEVICE;
     }
 
     volatile SMI_DSW* dsw = (volatile SMI_DSW*) REG32((*cxt->smi_regs), SMIO_DSW(n));
@@ -188,7 +211,7 @@ void smi_dma_setup(MEM_MAP smi_regs)
 
     if (cs->fields.seterr)
     {
-        perror("SMI SETERR true\n");
+        ERROR("SMI SETERR true");
         cs->fields.seterr = 1;
     }
 }
@@ -213,7 +236,7 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
     volatile SMI_D*  d = (volatile SMI_D*) REG32((*cxt->smi_regs), SMIO_D);
 
-    if(ret_data == NULL) return -EINVAL;
+    if(ret_data == NULL) return SMI_ERR_NULL_PTR;
 
     int count = 0;
     int spin = 0;
@@ -239,7 +262,7 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         {
             ERROR("Read await timeout reached");
             cs->fields.clear = 1;
-            return -ETIMEDOUT;
+            return -SMI_ERR_TIMEOUT;
         }
         spin++;
     }
@@ -293,7 +316,7 @@ int smi_read_await_direct(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int le
                 ERROR("Direct read await timeout reached");
                 cs->fields.clear = 1;
                 dcs->fields.done = 1;
-                return -ETIMEDOUT;
+                return SMI_ERR_TIMEOUT;
             }
             spin++;
         }
@@ -430,7 +453,7 @@ int smi_programmed_read_arr(SMI_CXT* cxt, void* ret_data, uint8_t addr, int len)
 
 int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
 {
-    if(data == NULL || cxt == NULL) return -1;
+    if(data == NULL || cxt == NULL) return SMI_ERR_NULL_PTR;
 
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
     volatile SMI_D*  d  = (volatile SMI_D*)  REG32((*cxt->smi_regs), SMIO_D);
@@ -455,7 +478,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
                 ERROR("Write await timeout reached. Interface not receiving data");
                 cs->fields.clear = 1;
                 cs->fields.done = 1;
-                return -ETIMEDOUT;
+                return SMI_ERR_TIMEOUT;
             }
 
             spin++;
@@ -466,7 +489,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
             ERROR("Write await timeout reached. Data available but not readable");
             cs->fields.clear = 1;
             cs->fields.done = 1;
-            return -ETIMEDOUT;
+            return SMI_ERR_TIMEOUT;
         }
 
         if (cs->fields.aferr)
@@ -485,7 +508,7 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
 
 int smi_write_await_direct(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len, int increment)
 {
-    if(data == NULL || cxt == NULL) return -1;
+    if(data == NULL || cxt == NULL) return SMI_ERR_NULL_PTR;
 
     volatile SMI_CS*  cs  = (volatile SMI_CS*)  REG32((*cxt->smi_regs), SMIO_CS);
     volatile SMI_DA*  da  = (volatile SMI_DA*)  REG32((*cxt->smi_regs), SMIO_DA);
@@ -512,7 +535,7 @@ int smi_write_await_direct(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len, 
                 ERROR("Direct write await timeout reached");
                 cs->fields.clear = 1;
                 dcs->fields.done = 1;
-                return -ETIMEDOUT;
+                return SMI_ERR_TIMEOUT;
             }
         }
 
@@ -614,7 +637,7 @@ int smi_dma_await(SMI_CXT* cxt)
         {
             ERROR("DMA await timeout reached");
             dma_cs->fields.abort = 1;
-            return -ETIMEDOUT;
+            return SMI_ERR_DMA_FAIL;
         }
 
         spin++;
