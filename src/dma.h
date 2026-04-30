@@ -110,21 +110,6 @@ typedef union
     volatile uint32_t value;
 } DMA_CS SMI_ALIGNED;
 
-#define CS_CR                   (1 << 31)   /* DMA Channel Reset */
-#define CS_ABORT                (1 << 30)
-#define CS_DISDEBUG             (1 << 29)
-#define CS_WFOW                 (1 << 28)
-#define CS_PANIC_PRIORITY       (15 << 20)
-#define CS_PRIORITY             (15 << 16)
-#define CS_ERROR                (1 << 8)
-#define CS_WGFOW                (1 << 6)
-#define CS_DREQ_STOP            (1 << 5)
-#define CS_PAUSED               (1 << 4)
-#define CS_DREQ                 (1 << 3)
-#define CS_INT                  (1 << 2)
-#define CS_END                  (1 << 1)
-#define CS_ACTIVE               (1 << 0)
-
 /* DMA Control Block Address Register */
 typedef struct
 {
@@ -160,16 +145,6 @@ typedef union
 } DMA_DEBUG SMI_ALIGNED;
 
 #define DMA_DEBUG(cs)		((c * 0x100) + 0x20)
-#define DB_LITE			    (1 << 28)
-#define DB_VERSION		    (7 << 25)
-#define DB_STATE		    (255 << 16)
-#define DB_ID			    (255 << 8)
-#define DB_OUTSTANDING_WR	(15 << 4)
-#define DB_RD_ERR		    (1 << 2)
-#define DB_FIFO_ERR		    (1 << 1)
-#define DB_RLNSE		    (1 << 0)
-
-
 
 void* map_dma_buffer(size_t buf_size);
 int start_dma(volatile void* dma_regs, uintptr_t cb, uint8_t channel, int fd_sync_dev, int fd_sync_cpu);

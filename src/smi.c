@@ -1011,7 +1011,7 @@ void smi_unpack_rgb565_18_swap(const uint32_t* raw, void* out, size_t count, smi
     }
 }
 
-void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_pack_ratio_t ratio)
+int smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_pack_ratio_t ratio)
 {
     int width = cxt->rw_config->rconfig->rwidth;
     int format = cxt->rw_config->wconfig->wformat;
@@ -1021,33 +1021,37 @@ void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_
     {
     case SMI_8_BITS:
         if (format == SMI_RGB565) smi_unpack_rgb565_8(data, ret_data, count, ratio);
-        if (format == SMI_XRGB)   smi_unpack_xrgb_8(data, ret_data, count, ratio);
-        return;
+        else if (format == SMI_XRGB)   smi_unpack_xrgb_8(data, ret_data, count, ratio);
+        else return SMI_ERR_INVALID_FORMAT;
+        return SMI_OK;
 
     case SMI_9_BITS:
         if (format == SMI_RGB565) (swap == 0) ? 
                 smi_unpack_rgb565_9(data, ret_data, count, ratio) :
                 smi_unpack_rgb565_9_swap(data, ret_data, count, ratio);
-        if (format == SMI_XRGB)   (swap == 0) ? 
+        else if (format == SMI_XRGB)   (swap == 0) ? 
                 smi_unpack_xrgb_9(data, ret_data, count, ratio) :
                 smi_unpack_xrgb_9_swap(data, ret_data, count, ratio); 
-        return;
+        else return SMI_ERR_INVALID_FORMAT;
+        return SMI_OK;
 
     case SMI_16_BITS:
         if (format == SMI_RGB565) smi_unpack_rgb565_16(data, ret_data, count, ratio);
-        if (format == SMI_XRGB)   smi_unpack_xrgb_16(data, ret_data, count, ratio);
-        return;
+        else if (format == SMI_XRGB)   smi_unpack_xrgb_16(data, ret_data, count, ratio);
+        else return SMI_ERR_INVALID_FORMAT;
+        return SMI_OK;
 
     case SMI_18_BITS:
         if (format == SMI_RGB565) (swap == 0) ? 
                 smi_unpack_rgb565_18(data, ret_data, count, ratio) :
                 smi_unpack_rgb565_18_swap(data, ret_data, count, ratio);
-        if (format == SMI_XRGB)   smi_unpack_xrgb_18(data, ret_data, count, ratio);
-        return;
+        else if (format == SMI_XRGB)   smi_unpack_xrgb_18(data, ret_data, count, ratio);
+        else return SMI_ERR_INVALID_FORMAT;
+        return SMI_OK;
     }
-
+    
     ERROR("Unknown interface configuration - could not unpack data");
-    return;
+    return SMI_ERR_INVALID_WIDTH;
 }
 
 smi_pack_ratio_t smi_packed_ratio(SMI_CXT* cxt)

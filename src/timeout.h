@@ -51,7 +51,7 @@ static inline bool timeout_apply(smi_timeout_ns deadline, int tier)
     case 0:
         break;
     case 1:
-        __asm__ volatile("nop"   ::: "memory");
+        __asm__ volatile("yield" ::: "memory");
         break;
     case 2:
         if(timeout_complete(deadline)) return true;

@@ -114,7 +114,7 @@ typedef struct {
 typedef union {
     SMI_CS_BITFIELD fields;
     volatile uint32_t value; 
-} SMI_CS __attribute__ ((aligned(4)));
+} SMI_CS SMI_ALIGNED;
 
 /* SMI Length Register */
 typedef struct {
@@ -187,7 +187,7 @@ typedef struct {
 typedef union {
     SMI_DSR_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DSR __attribute__ ((aligned(4)));
+} SMI_DSR SMI_ALIGNED;
 
 
 /* SMI Device Write Setting Register */
@@ -206,7 +206,7 @@ typedef struct {
 typedef union {
     SMI_DSW_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DSW __attribute__ ((aligned(4)));
+} SMI_DSW SMI_ALIGNED;
 
 
 /* SMI Direct Control and Status Register */
@@ -451,7 +451,7 @@ void smi_unpack_rgb565_16(const uint32_t* raw, void* out, size_t count, smi_pack
 void smi_unpack_xrgb_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
 void smi_unpack_rgb565_18(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio);
 
-void smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_pack_ratio_t ratio);
+int smi_unpack(SMI_CXT* cxt, uint32_t* data, void* ret_data, size_t count, smi_pack_ratio_t ratio);
 smi_pack_ratio_t smi_packed_ratio(SMI_CXT* cxt);
 
 /* --- Word Truncators --- */
