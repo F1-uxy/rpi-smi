@@ -47,8 +47,4 @@
 #define SMI_ERR_INVALID_ADDR    -33  /* Invalid SMI address */
 #define SMI_ERR_INVALID_FORMAT  -34  /* Invalid pixel format */
 
-#define SMI_ERR_TIMEOUT     -2
-#define SMI_ERR_DMA_FAIL    -3
-
-
 #endif

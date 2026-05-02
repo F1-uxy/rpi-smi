@@ -127,7 +127,7 @@ void smi_unmap_udmabuf(SMI_CXT* cxt)
 /* ns: Clock period; even number 2 -> 30*/
 void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns)
 {    
-    int divi = ns/2;
+    int divi = ns/2; /* Only valid on RPI 3 */
 
     if(*REG32(clk_regs, CLK_SMI_DIV) != divi << 12)
     {
@@ -144,10 +144,16 @@ void init_smi_clk(MEM_MAP clk_regs, MEM_MAP smi_regs, int ns)
     }
 }
 
-void smi_sync_context_device(SMI_CXT* cxt)
+int smi_sync_context_device(SMI_CXT* cxt)
 {
-    smi_configure_write_device(cxt, cxt->rw_config->write_device_num);
-    smi_configure_read_device(cxt, cxt->rw_config->read_device_num);
+    int err = SMI_OK;
+    err = smi_configure_write_device(cxt, cxt->rw_config->write_device_num);
+    if(err < SMI_OK) return err;
+    
+    err = smi_configure_read_device(cxt, cxt->rw_config->read_device_num);
+    if(err < SMI_OK) return err;
+
+    return err;
 }
 
 int smi_configure_read_device(SMI_CXT* cxt, uint8_t n)
@@ -211,7 +217,7 @@ void smi_dma_setup(MEM_MAP smi_regs)
 
     if (cs->fields.seterr)
     {
-        ERROR("SMI SETERR true");
+        perror("SMI SETERR true\n");
         cs->fields.seterr = 1;
     }
 }
@@ -245,12 +251,8 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
     
     deadline = start_timeout(PROG_READ_TIMEOUT_S);
 
-    /* We can assume that if data is leftover in the FIFO is hardware fault? */
     while(count < len)
-    {
-        //printf("Len %d vs Count %d ; Done %d\n", len, count, (cs->fields.done > 0));
-        //printf("RXF: %d ; RXD: %d ; RXR: %d ; TXE: %d ; TXD: %d ; TXW: %d\n", (cs->fields.rxf > 0), (cs->fields.rxd > 0), (cs->fields.rxr > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.txw > 0));
-        
+    {        
         if (cs->fields.rxd) 
         {
             ret_data[count++] = d->value;
@@ -266,13 +268,6 @@ int smi_read_await(SMI_CXT* cxt, uint32_t* ret_data, int len)
         }
         spin++;
     }
-
-    // while(cs->fields.rxd && count < len)
-    // {
-    //     //printf("Len %d vs Count %d ; Done %d\n", len, count, (cs->fields.done > 0));
-    //     //printf("RXF: %d ; RXD: %d ; RXR: %d ; TXE: %d ; TXD: %d ; TXW: %d\n", (cs->fields.rxf > 0), (cs->fields.rxd > 0), (cs->fields.rxr > 0), (cs->fields.txe > 0), (cs->fields.txd > 0), (cs->fields.txw > 0));
-    //     ret_data[count++] = d->value;
-    // }
 
     if(count < len)
     {
@@ -349,13 +344,14 @@ int smi_direct_read(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr)
     cs->fields.pxldat = 0;
     cs->fields.pad = 0;
 
-    dsr->fields.rwidth = 0;
+    dsr->fields.rwidth = 0; /* 8bit read width */
+
     dcs->fields.done = 1;
 
     dcs->fields.write = 0;
 
     da->fields.addr = addr;
-    dd->value = 0;
+    dd->value = 0; /* flush stale data */
 
     dcs->fields.start = 1;
     
@@ -377,7 +373,7 @@ int smi_direct_read_arr(SMI_CXT* cxt, uint32_t* ret_data, uint8_t addr, int len,
     dcs->fields.write = 0;
 
     da->fields.addr = addr;
-    dd->value = 0;
+    dd->value = 0; /* flush stale data */
 
     dcs->fields.start = 1;
     int count = smi_read_await_direct(cxt, ret_data, addr, len, increment);
@@ -628,19 +624,21 @@ int smi_dma_await(SMI_CXT* cxt)
     long delay = 1000;    
     smi_timeout_ns deadline;
     
-    int spin = 0;
     deadline = start_timeout(PROG_READ_TIMEOUT_S);
 
     while(!dma_cs->fields.end)
     {
-        if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
+        if(timeout_complete(deadline))
         {
-            ERROR("DMA await timeout reached");
+            ERROR("DMA transfer timeout");
             dma_cs->fields.abort = 1;
-            return SMI_ERR_DMA_FAIL;
+            return -ETIMEDOUT;
         }
 
-        spin++;
+        struct timespec ts = {0, delay};
+        nanosleep(&ts, NULL);
+
+        if(delay < 100000) delay *= 2;
     }
     
     return 1;
@@ -743,13 +741,13 @@ int smi_programmed_read_dma(SMI_CXT* cxt, DMA_CB* cb, uint8_t addr, int len, int
     return err;
 }
 
+
 void smi_unpack_rgb565_8(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint8_t* dst = out;
 
     for(size_t i = 0; i < count; i++)
     {
-
         uint32_t word = raw[i];
         uint8_t b1 = (word >>  0) & 0xFF;
         uint8_t b0 = (word >>  8) & 0xFF;
@@ -812,6 +810,7 @@ void smi_unpack_xrgb_9(const uint32_t* raw, void* out, size_t count, smi_pack_ra
 void smi_unpack_xrgb_9_swap(const uint32_t* raw, void* out, size_t count, smi_pack_ratio_t ratio)
 {
     uint16_t* dst = out;
+    //printf("Swap Full words: %d ; Tail bytes: %d\n", full_words, tail_bytes);
 
     for(size_t i = 0; i < count; i++)
     {
@@ -861,6 +860,8 @@ void smi_unpack_rgb565_9(const uint32_t* raw, void* out, size_t count, smi_pack_
         uint32_t word = raw[i];
         smi_unpack_rgb565_9_word(word, word_buffer);
 
+        //printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
+
         dst[0] = word_buffer[0];
         dst[1] = word_buffer[1];
         dst[2] = word_buffer[2];
@@ -895,6 +896,7 @@ void smi_unpack_rgb565_9_swap(const uint32_t* raw, void* out, size_t count, smi_
         uint32_t word = raw[i];
 
         smi_unpack_rgb565_9_word(word, word_buffer);
+        //printf("%u ; %u ; %u ; %u\n", word_buffer[0], word_buffer[1], word_buffer[2], word_buffer[3]);
 
         dst[0] = word_buffer[1];
         dst[1] = word_buffer[0];

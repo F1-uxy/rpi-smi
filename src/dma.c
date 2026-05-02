@@ -24,14 +24,14 @@ void* map_dma_buffer(size_t buf_size)
 
     if((fd = open("/dev/udmabuf0", openFlags)) < 0)
     {
-        ERROR("failed opening /dev/udmabuf0");
+        perror("ERROR: failed opening /dev/udmabuf0\n");
         return NULL;    
     }
 
     void* buf = mmap(NULL, buf_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if(buf == MAP_FAILED)
     {
-        ERROR("buffer mapping failed");
+        perror("ERROR: buffer mapping failed\n");
         close(fd);
         return NULL;
     }
@@ -44,14 +44,14 @@ int start_dma(volatile void* dma_regs, uintptr_t cb, uint8_t channel, int fd_syn
 {
     if(cb == 0)
     {
-        ERROR("CB Null Pointer");
-        return SMI_ERR_NULL_PTR;
+        perror("ERROR: CB Null Pointer\n");
+        return -1;
     }
 
     if (channel > 14)
     {
-        ERROR("Channel out of range"); 
-        return SMI_ERR_INVALID_DEVICE;
+        perror("ERROR: Channel out of range\n"); 
+        return - 1;
     }
 
     #if defined(PI_ARM64)
@@ -64,7 +64,7 @@ int start_dma(volatile void* dma_regs, uintptr_t cb, uint8_t channel, int fd_syn
     if (dma_cs->fields.active)
     {
         ERROR("DMA already active");
-        return SMI_ERR_DMA_FAIL;
+        return -1;
     }
 
     dma_conblk_ad->fields.scb_addr = (uint32_t)cb;
@@ -80,18 +80,13 @@ size_t dma_buffer_init(MEM_MAP* buff, int check, int clear)
 
     if(buff->virt == NULL)
     {
-        ERROR("Error mapping segment");
+        perror("Error mapping segment\n");
         return -1;
     }
 
     buff->size = read_sysfile_size(UDMABUF_SYS SIZE_FILE);
     buff->phys = read_sysfile_phys_addr(UDMABUF_SYS PHYS_ADDR);
-    
-    #ifdef RPI3
-        buff->bus = buff->phys + 0xC0000000;
-    #else
-        buff->bus = buff->phys;
-    #endif
+    buff->bus = buff->phys + 0xC0000000;
 
     if(check)
     {

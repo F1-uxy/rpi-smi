@@ -31,12 +31,13 @@
     #error "SPIN_MALLEABLE_LIMIT must be less than SPIN_SOFT_LIMIT"
 #endif
 
+
 #define DIRECT_READ_TIMEOUT_S 2
-#define PROG_READ_TIMEOUT_S 90
+#define PROG_READ_TIMEOUT_S 50
 
 #define DIRECT_WRITE_TIMEOUT_S 15
 #define PROG_WRITE_TIMEOUT_S 50
-#define DMA_WRITE_TIMEOUT_S 50
+#define DMA_WRITE_TIMEOUT_S 2
 
 /* SMI Register Offsets */
 #define SMI_BASE    (PHYS_REG_BASE + 0x600000)   /* Base address             */
@@ -109,12 +110,12 @@ typedef struct {
                         txd    : 1,
                         rxf    : 1,
                         txe    : 1;
-} SMI_CS_BITFIELD SMI_PACKED;
+} SMI_CS_BITFIELD;
 
 typedef union {
     SMI_CS_BITFIELD fields;
     volatile uint32_t value; 
-} SMI_CS SMI_ALIGNED;
+} SMI_CS __attribute__ ((aligned(32)));
 
 /* SMI Length Register */
 typedef struct {
@@ -134,7 +135,7 @@ typedef struct {
                         _x2     : 2,
                         device  : 2,
                         _x1     : 21;
-} SMI_A_BITFIELD SMI_PACKED;
+} SMI_A_BITFIELD;
 
 typedef union {
     SMI_A_BITFIELD fields;
@@ -163,7 +164,7 @@ typedef struct {
                         _x2     : 3,
                         dmaen   : 1,
                         _x1     : 3;
-} SMI_DC_BITFIELD SMI_PACKED;
+} SMI_DC_BITFIELD;
 
 typedef union {
     SMI_DC_BITFIELD fields;
@@ -182,12 +183,12 @@ typedef struct {
                         mode68   : 1,
                         rsetup   : 6,
                         rwidth   : 2;
-} SMI_DSR_BITFIELD SMI_PACKED;
+} SMI_DSR_BITFIELD;
 
 typedef union {
     SMI_DSR_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DSR SMI_ALIGNED;
+} SMI_DSR __attribute__ ((aligned(32)));
 
 
 /* SMI Device Write Setting Register */
@@ -201,12 +202,12 @@ typedef struct {
                         wformat  : 1,
                         wsetup   : 6,
                         wwidth   : 2;
-} SMI_DSW_BITFIELD SMI_PACKED;
+} SMI_DSW_BITFIELD;
 
 typedef union {
     SMI_DSW_BITFIELD fields;
     volatile uint32_t value;
-} SMI_DSW SMI_ALIGNED;
+} SMI_DSW __attribute__ ((aligned(32)));
 
 
 /* SMI Direct Control and Status Register */
@@ -216,7 +217,7 @@ typedef struct {
                         done   : 1,
                         write  : 1,
                         _res   : 28;
-} SMI_DCS_BITFIELD SMI_PACKED;
+} SMI_DCS_BITFIELD;
 
 typedef union {
     SMI_DCS_BITFIELD fields;
@@ -230,7 +231,7 @@ typedef struct {
                         _x2     : 2,
                         device  : 2,
                         _x1     : 22;
-} SMI_DA_BITFIELD SMI_PACKED;
+} SMI_DA_BITFIELD;
 
 typedef union {
     SMI_DA_BITFIELD fields;
@@ -242,7 +243,7 @@ typedef union {
 typedef struct {
     volatile uint32_t   data : 18,
                         _res : 14;
-} SMI_DD_BITFIELD SMI_PACKED;
+} SMI_DD_BITFIELD;
 
 typedef union {
     SMI_DD_BITFIELD fields;
@@ -257,7 +258,7 @@ typedef struct {
                         flvl    : 6,
                         _x1     : 18;
                         
-}SMI_FD_BITFIELD SMI_PACKED;
+}SMI_FD_BITFIELD;
 
 typedef union {
     SMI_FD_BITFIELD fields;
@@ -380,7 +381,7 @@ typedef struct {
 /* --- SMI Setup Helpers --- */
 int smi_init_cxt_map(SMI_CXT* cxt, MEM_MAP* smi_regs, MEM_MAP* clk_regs, MEM_MAP* gpio_regs, MEM_MAP* dma_regs);
 void smi_init_rw_config(SMI_CXT* cxt, SMI_RW* rw, SMI_CLK* clk, SMI_READ* rconfig, SMI_WRITE* wconfig, int read_device, int write_device);
-void smi_sync_context_device(SMI_CXT* cxt);
+int smi_sync_context_device(SMI_CXT* cxt);
 int smi_configure_read_device(SMI_CXT* cxt, uint8_t n);
 int smi_configure_write_device(SMI_CXT* cxt, uint8_t n);
 int smi_init_udmabuf(SMI_CXT* cxt, MEM_MAP* dma_buffer);
