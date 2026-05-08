@@ -462,10 +462,6 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
     
     while(!cs->fields.done)
     {
-        if(count < len + 1)
-        {
-            d->value = data[count++];
-        }
 
         while(!cs->fields.txd)
         {
@@ -478,6 +474,11 @@ int smi_write_await(SMI_CXT* cxt, uint32_t* data, uint8_t addr, int len)
             }
 
             spin++;
+        }
+
+        if(count < len + 1)
+        {
+            d->value = data[count++];
         }
         
         if(timeout_apply(deadline, timeout_spin_tier(spin, SPIN_HARD_LIMIT, SPIN_YIELD_LIMIT, SPIN_SOFT_LIMIT)))
