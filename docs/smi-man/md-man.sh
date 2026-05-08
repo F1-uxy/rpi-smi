@@ -1,0 +1,1 @@
+pandoc smi-man.md -s -t man -o smi.7

@@ -6,7 +6,43 @@
     <li> Redo the bullet point section into a paragraph and talk more about why I chose the tiered system.
     <li> Expand on the lookup table section
     <li> Write more about why instead of just what
+    <li> Implement optional heap use instead of forced heap use + resizing.
+    <li> Buffer vs stack transfer benchmark
+    <li> Map inputs to 18 bit packed
+    <li> Actually review the literature 
+    <li> Could I put the documentation into a MAN page??
+    <li> DMA read not working for read length of 1
+    <li> All width without packing benchmark
+    <li> Why is STD DEV so high on small DMA packets?
+    <li> perf L2 misses, DRAM R/W Bus contention, thermal throttling, calculate l1 vs l2 cache latency and if the fifo would then saturate
+    <li> Properly benchmark checking the waveforms
 </ul>
+
+Required diagrams:
+- Address translation
+- Read/Write function flowchart
+- API level design
+- Await functions
+- 
+
+There are also direct pass modes which take the lowest 8/9/16/18-bits of the input word and output this
+to the external data bus. To enable these modes the PXLDAT bit of the SMI_CS register must be
+cleared. In this case the FORMAT and SWAP bits are ignored.
+
+Why is DMA failing:
+- Consistent amount of successful transfers
+- Multiple blocks of smaller size don't fix the problem
+- Length register shows all read transfers were successful
+- FIFO debug shows the FIFO is full? but doesn't match the number of missing samples
+- Not noise on data lines as values are larger than maximum possible by 8 bits
+- Current suspect is paging on udmabuf where memory is not continuous and is cross the page boundary
+
+Questions to add depth:
+- Why does throughput behave differently between the 3B+ and Pi 4? Relate it back to the BCM283x architecture differences you already understand well.
+- Why does chunking improve performance at certain transfer sizes but not others? Connect it to FIFO saturation behaviour you described in the implementation.
+- Where does DMA start outperforming programmed transfers, and does that threshold match your theoretical expectation? If not, why not?
+- Methodology section currently reads slightly more like "what I did" than "why I did it in this order." A sentence or two explicitly framing the iterative, prototype-first approach as a deliberate response to the documentation gap (rather than just a preference) would sharpen it.
+- You've cited Bentham and CaribouLite in the background — can you put any of your throughput numbers in context against theirs, or against the theoretical maximum of the SMI bus? Even an order-of-magnitude comparison with a brief explanation of why direct comparison is difficult (different use cases, application-specific implementations) would push the analysis section significantly higher.
 
 #### Current Documentation:
 <ul>
